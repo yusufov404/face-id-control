@@ -34,6 +34,7 @@ jobs:
         with:
           python-version: "3.12"
           cache: "pip"
+          cache-dependency-path: "backend/requirements.txt"
       - name: Create virtual environment
         working-directory: backend
         run: python -m venv .venv
@@ -50,7 +51,7 @@ jobs:
           DATABASE_PASSWORD: ${{ secrets.TEST_DB_PASSWORD }}
           SECRET_KEY: "test_secret_key_that_is_at_least_32_characters_long"
           REFRESH_SECRET_KEY: "test_refresh_secret_key_that_is_at_least_32_characters_long"
-        run: .venv/bin/alembic upgrade head
+        run: ../backend/.venv/bin/alembic upgrade head
       - name: Run tests
         working-directory: backend
         env:
@@ -104,6 +105,7 @@ jobs:
         with:
           python-version: "3.12"
           cache: "pip"
+          cache-dependency-path: "backend/requirements.txt"
       - name: Create virtual environment
         working-directory: backend
         run: python -m venv .venv
@@ -120,4 +122,4 @@ jobs:
           DATABASE_PASSWORD: ${{ secrets.TEST_DB_PASSWORD }}
           SECRET_KEY: "test_secret_key_that_is_at_least_32_characters_long"
           REFRESH_SECRET_KEY: "test_refresh_secret_key_that_is_at_least_32_characters_long"
-        run: .venv/bin/alembic check
+        run: ../backend/.venv/bin/alembic check
