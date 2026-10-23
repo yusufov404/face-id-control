@@ -74,8 +74,13 @@ TEST_PASSWORD = "TestPassphrase123!"
 async def _create_schema() -> None:
     eng = create_async_engine(TEST_DB_URL, poolclass=NullPool)
     try:
+        # Drop the whole schema rather than individual tables: the database may
+        # already contain the Alembic-managed schema, whose constraint names do
+        # not always match SQLAlchemy metadata names.
         async with eng.begin() as conn:
-            await conn.run_sync(Base.metadata.drop_all)
+            await conn.exec_driver_sql("DROP SCHEMA IF EXISTS public CASCADE")
+            await conn.exec_driver_sql("CREATE SCHEMA public")
+        async with eng.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
     finally:
         await eng.dispose()
