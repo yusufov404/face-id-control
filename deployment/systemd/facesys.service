@@ -1,0 +1,45 @@
+[Unit]
+Description=FaceSys Enterprise — HR va Face ID davomat tizimi
+Documentation=file:/opt/facesys/docs/INSTALL.md
+After=network-online.target postgresql.service
+Wants=network-online.target
+Requires=postgresql.service
+
+[Service]
+Type=simple
+User=facesys
+Group=facesys
+WorkingDirectory=/opt/facesys/backend
+EnvironmentFile=/etc/facesys/facesys.env
+
+# IMPORTANT: keep a single worker. The background Hikvision poller is started
+# inside the application lifespan; with multiple uvicorn workers every worker
+# would poll the same devices. See docs/INSTALL.md ("Masshtablash").
+ExecStart=/opt/facesys/venv/bin/uvicorn app.main:app \
+    --host 127.0.0.1 --port 8000 --workers 1 \
+    --proxy-headers --forwarded-allow-ips=127.0.0.1
+
+Restart=always
+RestartSec=5
+TimeoutStopSec=30
+KillSignal=SIGINT
+
+# Hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+ReadWritePaths=/srv/facesys
+ReadWritePaths=-/var/backups/facesys
+ReadWritePaths=-/mnt/backup_hdd
+
+UMask=0027
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target

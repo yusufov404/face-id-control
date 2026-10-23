@@ -1,0 +1,29 @@
+[Unit]
+Description=FaceSys Enterprise — kunlik PostgreSQL zaxira nusxasi
+Documentation=file:/opt/facesys/docs/INSTALL.md
+After=network-online.target postgresql.service
+Requires=postgresql.service
+
+[Service]
+Type=oneshot
+User=facesys
+Group=facesys
+EnvironmentFile=/etc/facesys/facesys.env
+ExecStart=/opt/facesys/deployment/backup/backup.sh
+
+Nice=10
+IOSchedulingClass=idle
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+ReadWritePaths=/srv/facesys
+ReadWritePaths=-/var/backups/facesys
+ReadWritePaths=-/mnt/backup_hdd
+
+UMask=0077

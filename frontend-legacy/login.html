@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="color-scheme" content="light" />
+  <title>Kirish — FaceSys Enterprise</title>
+  <link rel="stylesheet" href="assets/css/main.css" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='14' fill='%231E3A5F'/><text x='32' y='43' font-size='28' font-family='Segoe UI' font-weight='700' fill='white' text-anchor='middle'>FS</text></svg>" />
+</head>
+<body>
+  <div class="auth-page">
+    <aside class="auth-side">
+      <div class="brand">
+        <div class="brand-mark">FS</div>
+        <div class="brand-text"><strong>FaceSys</strong><small>Enterprise</small></div>
+      </div>
+      <div>
+        <h2>Klinika uchun<br />professional HR va<br />Face ID davomat</h2>
+        <p>1000 xodim, 50 bo'lim va Hikvision terminallarini yagona lokal tizimda boshqaring — internetsiz ham.</p>
+        <ul class="auth-features">
+          <li><span class="tick">✓</span> Real vaqtdagi davomat va kechikish hisobi</li>
+          <li><span class="tick">✓</span> Rollarga asoslangan server darajasidagi himoya</li>
+          <li><span class="tick">✓</span> Har bir tuzatish uchun to'liq audit izi</li>
+        </ul>
+      </div>
+      <div style="font-size:11.5px;color:#7c9ab8">© 2026 FaceSys Enterprise · Lokal tarmoq uchun</div>
+    </aside>
+
+    <main class="auth-main">
+      <div class="auth-card">
+        <h1>Tizimga kirish</h1>
+        <p class="lede">Hisob ma'lumotlaringizni kiriting.</p>
+        <div class="card">
+          <div id="login-alert"></div>
+          <form id="login-form" novalidate>
+            <div class="field">
+              <label for="username">Login yoki email</label>
+              <input id="username" name="username" autocomplete="username" required
+                     autofocus placeholder="admin" />
+            </div>
+            <div class="field">
+              <label for="password">Parol</label>
+              <div style="position:relative">
+                <input id="password" name="password" type="password" autocomplete="current-password"
+                       required placeholder="••••••••" style="padding-right:44px" />
+                <button type="button" id="toggle-pass" class="btn btn-ghost btn-sm"
+                        style="position:absolute;right:3px;top:50%;transform:translateY(-50%)"
+                        aria-label="Parolni ko'rsatish">👁</button>
+              </div>
+            </div>
+            <button class="btn btn-primary btn-block" id="submit-btn" type="submit">Kirish</button>
+          </form>
+          <p class="inline-note mt-2" style="margin-bottom:0">
+            Parolni unutdingizmi? Tizim administratoriga murojaat qiling.
+          </p>
+        </div>
+        <div class="auth-foot">FaceSys Enterprise · v1.0 · Asia/Tashkent</div>
+      </div>
+    </main>
+  </div>
+
+  <script src="config.js"></script>
+  <script type="module" src="assets/js/login.js"></script>
+</body>
+</html>

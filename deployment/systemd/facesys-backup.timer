@@ -1,0 +1,14 @@
+[Unit]
+Description=FaceSys Enterprise — kunlik zaxira nusxasini ishga tushirish
+Documentation=file:/opt/facesys/docs/INSTALL.md
+
+[Timer]
+# Local time of the server. Install Asia/Tashkent system time or adjust.
+OnCalendar=*-*-* 02:00:00
+# Run the backup if the machine was off at 02:00.
+Persistent=true
+RandomizedDelaySec=300
+Unit=facesys-backup.service
+
+[Install]
+WantedBy=timers.target
