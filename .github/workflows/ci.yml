@@ -51,7 +51,7 @@ jobs:
           DATABASE_PASSWORD: ${{ secrets.TEST_DB_PASSWORD }}
           SECRET_KEY: "test_secret_key_that_is_at_least_32_characters_long"
           REFRESH_SECRET_KEY: "test_refresh_secret_key_that_is_at_least_32_characters_long"
-        run: ../backend/.venv/bin/alembic upgrade head
+        run: ../../backend/.venv/bin/alembic upgrade head
       - name: Run tests
         working-directory: backend
         env:
@@ -112,6 +112,17 @@ jobs:
       - name: Install dependencies
         working-directory: backend
         run: .venv/bin/pip install -r requirements.txt
+      - name: Apply migrations
+        working-directory: database/migrations
+        env:
+          DATABASE_HOST: 127.0.0.1
+          DATABASE_PORT: 5432
+          DATABASE_NAME: facesys_test
+          DATABASE_USER: postgres
+          DATABASE_PASSWORD: ${{ secrets.TEST_DB_PASSWORD }}
+          SECRET_KEY: "test_secret_key_that_is_at_least_32_characters_long"
+          REFRESH_SECRET_KEY: "test_refresh_secret_key_that_is_at_least_32_characters_long"
+        run: ../../backend/.venv/bin/alembic upgrade head
       - name: Alembic check
         working-directory: database/migrations
         env:
@@ -122,4 +133,4 @@ jobs:
           DATABASE_PASSWORD: ${{ secrets.TEST_DB_PASSWORD }}
           SECRET_KEY: "test_secret_key_that_is_at_least_32_characters_long"
           REFRESH_SECRET_KEY: "test_refresh_secret_key_that_is_at_least_32_characters_long"
-        run: ../backend/.venv/bin/alembic check
+        run: ../../backend/.venv/bin/alembic check

@@ -28,6 +28,8 @@ def upgrade() -> None:
         sa.Column("device_user_id", sa.String(length=32), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column("is_deleted", sa.Boolean(), nullable=False),
+        sa.Column("deleted_at", sa.DateTime(timezone=True), nullable=True),
         sa.PrimaryKeyConstraint("id", name="pk_employee_device_user_ids"),
         sa.ForeignKeyConstraint(
             ["employee_id"], ["employees.id"], name="fk_emp_dev_uid_employee_id_employees", ondelete="CASCADE"
@@ -45,6 +47,9 @@ def upgrade() -> None:
     )
     op.create_index(
         "ix_employee_device_user_ids_device_user_id", "employee_device_user_ids", ["device_user_id"]
+    )
+    op.create_index(
+        "ix_employee_device_user_ids_is_deleted", "employee_device_user_ids", ["is_deleted"]
     )
 
     # ------------------------------------------------------------------ Insert new roles
@@ -127,6 +132,7 @@ def downgrade() -> None:
     op.execute("DELETE FROM roles WHERE name IN ('director', 'accountant');")
 
     # Drop employee_device_user_ids table
+    op.drop_index("ix_employee_device_user_ids_is_deleted", table_name="employee_device_user_ids")
     op.drop_index("ix_employee_device_user_ids_device_user_id", table_name="employee_device_user_ids")
     op.drop_index("ix_employee_device_user_ids_device_id", table_name="employee_device_user_ids")
     op.drop_index("ix_employee_device_user_ids_employee_id", table_name="employee_device_user_ids")
