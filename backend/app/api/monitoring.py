@@ -83,6 +83,7 @@ async def live_events(
     event_type: Optional[str] = None,
     processed: Optional[bool] = None,
     hours: int = Query(24, ge=1, le=168),
+    unmapped: bool = Query(False),
     ctx: AuthContext = Depends(require_permission(Permission.ATTENDANCE_READ)),
     db: AsyncSession = Depends(get_db),
 ):
@@ -120,6 +121,9 @@ async def live_events(
     
     if processed is not None:
         stmt = stmt.where(DeviceEvent.processed.is_(processed))
+
+    if unmapped:
+        stmt = stmt.where(DeviceEvent.employee_id.is_(None))
     
     total = (await db.execute(select(func.count()).select_from(stmt.subquery()))).scalar_one()
     

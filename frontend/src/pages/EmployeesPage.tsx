@@ -5,10 +5,12 @@ import {
   Eye,
   Pencil,
   Plus,
+  ScanFace,
   Trash2,
   Users,
+  Zap,
 } from 'lucide-react'
-import { departmentsApi, employeesApi, positionsApi } from '@/api/services'
+import { departmentsApi, devicesApi, employeesApi, positionsApi } from '@/api/services'
 import type { Employee, EmployeeCreateInput, EmployeeStatusInput, EmployeeUpdateInput } from '@/api/types'
 import { useAuth } from '@/auth/AuthProvider'
 import { EmployeeCombobox } from '@/components/forms/EmployeeCombobox'
@@ -122,6 +124,22 @@ export default function EmployeesPage() {
   const [errors, setErrors] = useState<ValidationErrors>({})
   const [formError, setFormError] = useState('')
   const [statusForm, setStatusForm] = useState({ status: 'active', termination_date: '', reason: '' })
+  const [quickOpen, setQuickOpen] = useState(false)
+  const [quickForm, setQuickForm] = useState({
+    internal_id: '',
+    first_name: '',
+    last_name: '',
+    middle_name: '',
+    department_id: '',
+    position_id: '',
+    phone: '',
+    hire_date: todayISO(),
+  })
+  const [quickErrors, setQuickErrors] = useState<ValidationErrors>({})
+  const [quickError, setQuickError] = useState('')
+  const [biometricOpen, setBiometricOpen] = useState(false)
+  const [biometricEmployee, setBiometricEmployee] = useState<Employee | null>(null)
+  const [biometricDeviceId, setBiometricDeviceId] = useState('')
 
   const debouncedSearch = useDebouncedValue(search)
 
@@ -130,6 +148,12 @@ export default function EmployeesPage() {
     queryKey: ['positions', 'option-list', departmentId || 'all'],
     queryFn: () => positionsApi.list({ page: 1, page_size: 100, department_id: departmentId || undefined }),
   })
+  useQuery({
+    queryKey: ['positions', 'quick-list', quickForm.department_id || 'all'],
+    queryFn: () => positionsApi.list({ page: 1, page_size: 200, department_id: quickForm.department_id || undefined }),
+    enabled: quickOpen,
+  })
+  const devicesQuery = useQuery({ queryKey: ['devices', 'enroll-options'], queryFn: () => devicesApi.list({ page: 1, page_size: 100 }), enabled: biometricOpen })
   const employeesQuery = useQuery({
     queryKey: ['employees', page, pageSize, debouncedSearch, departmentId, positionId, status],
     queryFn: () => employeesApi.list({
@@ -191,6 +215,67 @@ export default function EmployeesPage() {
     onError: (error) => setFormError(error instanceof Error ? error.message : "Xodimni saqlab bo'lmadi"),
   })
 
+  const quickCreateMutation = useMutation({
+    mutationFn: async () => {
+      const department = quickForm.department_id ? Number(quickForm.department_id) : null
+      const position = quickForm.position_id ? Number(quickForm.position_id) : null
+      const payload: EmployeeCreateInput = {
+        internal_id: quickForm.internal_id.trim() || `EMP-${Date.now().toString().slice(-6)}`,
+        first_name: quickForm.first_name.trim(),
+        last_name: quickForm.last_name.trim(),
+        middle_name: nullableText(quickForm.middle_name),
+        phone: nullableText(quickForm.phone),
+        status: 'active',
+        hire_date: quickForm.hire_date,
+        department_id: department,
+        position_id: position,
+        device_user_id: null,
+        gender: null,
+        birth_date: null,
+        email: null,
+        address: null,
+        supervisor_id: null,
+        termination_date: null,
+        notes: null,
+      }
+      return employeesApi.create(payload)
+    },
+    onSuccess: (employee) => {
+      toast.success("Xodim qo'shildi")
+      setQuickOpen(false)
+      setQuickErrors({})
+      setQuickError('')
+      setQuickForm({ internal_id: '', first_name: '', last_name: '', middle_name: '', department_id: '', position_id: '', phone: '', hire_date: todayISO() })
+      void queryClient.invalidateQueries({ queryKey: ['employees'] })
+      setBiometricEmployee(employee)
+      const items = (devicesQuery.data as any)?.items || []
+      const online = items.filter((d: any) => d.is_online)
+      if (online.length === 1) {
+        setBiometricDeviceId(String(online[0].id))
+        setBiometricOpen(true)
+        enrollMutation.mutate()
+      } else if (items.length === 1) {
+        setBiometricDeviceId(String(items[0].id))
+        setBiometricOpen(true)
+      } else {
+        setBiometricDeviceId(online[0] ? String(online[0].id) : (items[0] ? String(items[0].id) : ''))
+        setBiometricOpen(true)
+      }
+    },
+    onError: (error) => setQuickError(error instanceof Error ? error.message : "Xodimni saqlab bo'lmadi"),
+  })
+
+  const enrollMutation = useMutation({
+    mutationFn: async () => {
+      if (!biometricEmployee || !biometricDeviceId) throw new Error('Terminal tanlanmagan')
+      return (devicesApi as any).enrollFace(Number(biometricDeviceId), biometricEmployee.id)
+    },
+    onSuccess: (res: any) => {
+      toast.success(res?.detail || "Yuzni ro'yxatdan o'tkazish buyrug'i yuborildi. Terminal oldida ro'yxatdan o'tkazing.")
+    },
+    onError: (error) => toast.error(error instanceof Error ? error.message : "Yuzni ro'yxatdan o'tkazib bo'lmadi"),
+  })
+
   const deleteMutation = useMutation({
     mutationFn: (employee: Employee) => employeesApi.remove(employee.id),
     onSuccess: (response) => {
@@ -245,6 +330,32 @@ export default function EmployeesPage() {
     setSelected(employee)
     setStatusForm({ status: employee.status, termination_date: employee.termination_date || '', reason: '' })
     setMode('status')
+  }
+
+  function openQuickAdd() {
+    const nextId = employeesQuery.data?.total !== undefined ? `EMP-${String(employeesQuery.data.total + 1).padStart(4, '0')}` : `EMP-${Date.now().toString().slice(-4)}`
+    setQuickForm({ internal_id: nextId, first_name: '', last_name: '', middle_name: '', department_id: '', position_id: '', phone: '', hire_date: todayISO() })
+    setQuickErrors({})
+    setQuickError('')
+    setQuickOpen(true)
+  }
+
+  function validateQuick(): ValidationErrors {
+    const result = collectErrors([
+      ['last_name', required(quickForm.last_name, 'Familiya')],
+      ['first_name', required(quickForm.first_name, 'Ism')],
+      ['department_id', required(quickForm.department_id, "Bo'lim")],
+    ])
+    return result
+  }
+
+  function submitQuick(event: FormEvent) {
+    event.preventDefault()
+    const found = validateQuick()
+    setQuickErrors(found)
+    setQuickError('')
+    if (hasErrors(found)) return
+    quickCreateMutation.mutate()
   }
 
   function validateForm(): ValidationErrors {
@@ -368,7 +479,10 @@ export default function EmployeesPage() {
         title="Xodimlar"
         description="Xodimlarni qo'shish, tahrirlash, holatini o'zgartirish va bo'limlar bo'yicha filtrlash."
         actions={can('employee:create') ? (
-          <Button variant="primary" icon={<Plus className="h-4 w-4" />} onClick={openCreate}>Yangi xodim</Button>
+          <div className="flex items-center gap-2">
+            <Button variant="primary" icon={<Zap className="h-4 w-4" />} onClick={openQuickAdd}>Tezkor qo'shish</Button>
+            <Button variant="ghost" icon={<Plus className="h-4 w-4" />} onClick={openCreate}>Batafsil qo'shish</Button>
+          </div>
         ) : undefined}
       />
 
@@ -401,7 +515,12 @@ export default function EmployeesPage() {
           emptyTitle="Xodimlar topilmadi"
           emptyDescription="Filtrlarni o'zgartiring yoki yangi xodim qo'shing."
           emptyIcon={<Users className="h-6 w-6" />}
-          emptyAction={can('employee:create') ? <Button variant="primary" size="sm" icon={<Plus className="h-3.5 w-3.5" />} onClick={openCreate}>Xodim qo'shish</Button> : undefined}
+          emptyAction={can('employee:create') ? (
+            <div className="flex items-center gap-2">
+              <Button variant="secondary" size="sm" icon={<Zap className="h-3.5 w-3.5" />} onClick={openQuickAdd}>Tezkor qo'shish</Button>
+              <Button variant="primary" size="sm" icon={<Plus className="h-3.5 w-3.5" />} onClick={openCreate}>To'liq qo'shish</Button>
+            </div>
+          ) : undefined}
           footer={employeesQuery.data ? (
             <Pagination
               page={employeesQuery.data.page}
@@ -417,9 +536,79 @@ export default function EmployeesPage() {
       </div>
 
       <Modal
+        open={quickOpen}
+        onClose={() => setQuickOpen(false)}
+        title="Tezkor qo'shish"
+        description="Familiya, ism va bo'limni kiriting"
+        size="md"
+        footer={(
+          <>
+            <Button variant="secondary" onClick={() => setQuickOpen(false)} disabled={quickCreateMutation.isPending}>Bekor qilish</Button>
+            <Button variant="primary" onClick={() => document.getElementById('quick-employee-form')?.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }))} loading={quickCreateMutation.isPending}>
+              Saqlash
+            </Button>
+          </>
+        )}
+      >
+        <form id="quick-employee-form" onSubmit={submitQuick} noValidate className="space-y-3">
+          {quickError ? <Alert tone="danger">{quickError}</Alert> : null}
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field label="Familiya" htmlFor="quick_last_name" required error={quickErrors.last_name}>
+              <Input id="quick_last_name" value={quickForm.last_name} onChange={(event) => setQuickForm({ ...quickForm, last_name: event.target.value })} invalid={Boolean(quickErrors.last_name)} autoFocus />
+            </Field>
+            <Field label="Ism" htmlFor="quick_first_name" required error={quickErrors.first_name}>
+              <Input id="quick_first_name" value={quickForm.first_name} onChange={(event) => setQuickForm({ ...quickForm, first_name: event.target.value })} invalid={Boolean(quickErrors.first_name)} />
+            </Field>
+            <Field label="Bo'lim" htmlFor="quick_department_id" required error={quickErrors.department_id} className="sm:col-span-2">
+              <Select id="quick_department_id" value={quickForm.department_id} onChange={(event) => setQuickForm({ ...quickForm, department_id: event.target.value, position_id: '' })}>
+                <option value="">Tanlang</option>
+                {departmentsQuery.data?.map((department) => <option key={department.id} value={department.id}>{department.name}</option>)}
+              </Select>
+            </Field>
+          </div>
+        </form>
+      </Modal>
+
+      <Modal
+        open={biometricOpen && Boolean(biometricEmployee)}
+        onClose={() => setBiometricOpen(false)}
+        title="Yuzni ro'yxatdan o'tkazish"
+        description={biometricEmployee ? `${biometricEmployee.full_name} (${biometricEmployee.internal_id})` : undefined}
+        size="sm"
+        footer={(
+          <>
+            <Button variant="secondary" onClick={() => setBiometricOpen(false)} disabled={enrollMutation.isPending}>Tugatish</Button>
+            {((devicesQuery.data as any)?.items || []).length > 1 ? (
+              <Button variant="primary" icon={<ScanFace className="h-4 w-4" />} onClick={() => enrollMutation.mutate()} loading={enrollMutation.isPending} disabled={!biometricDeviceId}>
+                Ro'yxatdan o'tkazishni boshlash
+              </Button>
+            ) : (
+              <Button variant="primary" icon={<ScanFace className="h-4 w-4" />} onClick={() => enrollMutation.mutate()} loading={enrollMutation.isPending} disabled={!biometricDeviceId}>
+                Boshlash
+              </Button>
+            )}
+          </>
+        )}
+      >
+        <div className="space-y-3">
+          <Alert tone="info">Terminalga "face enroll" buyrug'i yuboriladi. Terminal oldida yuzni ko'rsatib ro'yxatdan o'tkazing.</Alert>
+          {((devicesQuery.data as any)?.items || []).length > 1 ? (
+            <Field label="Terminal" htmlFor="enroll_device">
+              <Select id="enroll_device" value={biometricDeviceId} onChange={(event) => setBiometricDeviceId(event.target.value)}>
+                <option value="">Tanlang</option>
+                {((devicesQuery.data as any)?.items || []).map((device: any) => (
+                  <option key={device.id} value={device.id}>{device.name} {device.is_online ? '(onlayn)' : '(offlayn)'}</option>
+                ))}
+              </Select>
+            </Field>
+          ) : null}
+        </div>
+      </Modal>
+
+      <Modal
         open={mode === 'create' || mode === 'edit'}
         onClose={() => setMode(null)}
-        title={mode === 'create' ? "Yangi xodim qo'shish" : 'Xodimni tahrirlash'}
+        title={mode === 'create' ? "Yangi xodim qo'shish (to'liq)" : 'Xodimni tahrirlash'}
         description="Shaxsiy ma'lumotlarni faqat ish maqsadida kiriting. O'zgarishlar audit jurnaliga yoziladi."
         size="xl"
         footer={(

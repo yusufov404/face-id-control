@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Activity,
   AlertCircle,
@@ -8,17 +8,21 @@ import {
   CheckCircle2,
   RefreshCw,
   User,
+  UserPlus,
   WifiOff,
   XCircle,
 } from 'lucide-react'
-import { monitoringApi } from '@/api/services'
-import type { LiveEvent } from '@/api/types'
+import { monitoringApi, employeesApi } from '@/api/services'
+import type { LiveEvent, Employee } from '@/api/types'
 import { Badge, Dot } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { DataTable, Pagination, type Column } from '@/components/ui/DataTable'
 import { FilterBar, InfoGrid, PageHeader, SearchInput } from '@/components/ui/LayoutBits'
 import { Select } from '@/components/ui/Field'
+import { Modal } from '@/components/ui/Modal'
+import { Input } from '@/components/ui/Field'
 import { useDebouncedValue } from '@/lib/hooks'
+import { useToast } from '@/components/ui/Toast'
 import {
   DEVICE_STATUS_LABELS,
   DEVICE_STATUS_TONES,
@@ -36,11 +40,18 @@ export default function MonitoringPage() {
   const [processedFilter, setProcessedFilter] = useState('')
   const [hoursFilter, setHoursFilter] = useState(24)
   const [autoRefresh, setAutoRefresh] = useState(true)
+  const [unmappedOnly, setUnmappedOnly] = useState(false)
+  const [linkEvent, setLinkEvent] = useState<LiveEvent | null>(null)
+  const [empSearch, setEmpSearch] = useState('')
+  const [selectedEmp, setSelectedEmp] = useState<Employee | null>(null)
+  const queryClient = useQueryClient()
+  const toast = useToast()
 
   const debouncedSearch = useDebouncedValue(search, 300)
+  const debouncedEmpSearch = useDebouncedValue(empSearch, 300)
 
   const eventsQuery = useQuery({
-    queryKey: ['monitoring-events', page, pageSize, debouncedSearch, deptFilter, eventTypeFilter, processedFilter, hoursFilter],
+    queryKey: ['monitoring-events', page, pageSize, debouncedSearch, deptFilter, eventTypeFilter, processedFilter, hoursFilter, unmappedOnly],
     queryFn: () => monitoringApi.liveEvents({
       page,
       page_size: pageSize,
@@ -49,6 +60,7 @@ export default function MonitoringPage() {
       event_type: eventTypeFilter || undefined,
       processed: processedFilter === '' ? undefined : processedFilter === 'true',
       hours: hoursFilter,
+      unmapped: unmappedOnly || undefined,
     }),
     refetchInterval: autoRefresh ? 10000 : false,
   })
@@ -66,6 +78,32 @@ export default function MonitoringPage() {
   })
 
   const deptsQuery = useQuery({ queryKey: ['monitoring-depts'], queryFn: () => monitoringApi.departmentsOptions() })
+
+  const employeesSearchQuery = useQuery({
+    queryKey: ['employees-search-link', debouncedEmpSearch],
+    queryFn: () => employeesApi.list({ page: 1, page_size: 10, search: debouncedEmpSearch || undefined }),
+    enabled: linkEvent !== null,
+  })
+
+  const handleLink = async () => {
+    if (!linkEvent || !selectedEmp || !linkEvent.device_id || !linkEvent.device_user_id) {
+      toast.error("Ma'lumotlar to'liq emas")
+      return
+    }
+    try {
+      await employeesApi.addDeviceMapping(selectedEmp.id, {
+        device_id: linkEvent.device_id,
+        device_user_id: String(linkEvent.device_user_id),
+      })
+      toast.success("Xodim terminalga bog'landi")
+      setLinkEvent(null)
+      setSelectedEmp(null)
+      setEmpSearch('')
+      await queryClient.invalidateQueries({ queryKey: ['monitoring-events'] })
+    } catch (err: any) {
+      toast.error(err?.response?.data?.detail || "Bog'lashda xatolik yuz berdi")
+    }
+  }
 
   const eventColumns: Column<LiveEvent>[] = [
     {
@@ -142,6 +180,17 @@ export default function MonitoringPage() {
             </Badge>
           )}
         </div>
+      ),
+    },
+    {
+      key: 'actions',
+      header: 'Amallar',
+      cell: (event) => (
+        event.employee_id ? null : (
+          <Button size="sm" variant="primary" icon={<UserPlus className="h-3.5 w-3.5" />} onClick={() => setLinkEvent(event)}>
+            Bog‘lash
+          </Button>
+        )
       ),
     },
   ]
@@ -225,6 +274,16 @@ export default function MonitoringPage() {
             <option value="48">48 soat</option>
             <option value="168">1 hafta</option>
           </Select>
+          <Button
+            variant={unmappedOnly ? 'primary' : 'secondary'}
+            size="sm"
+            onClick={() => {
+              setUnmappedOnly((prev) => !prev)
+              setPage(1)
+            }}
+          >
+            {unmappedOnly ? 'Barcha hodisalar' : 'Faqat bog‘lanmagan hodisalar'}
+          </Button>
         </FilterBar>
       </div>
 
@@ -295,6 +354,60 @@ export default function MonitoringPage() {
           )}
         </div>
       </div>
+
+      <Modal
+        open={!!linkEvent}
+        onClose={() => {
+          setLinkEvent(null)
+          setSelectedEmp(null)
+          setEmpSearch('')
+        }}
+        title="Xodimga bog‘lash"
+        description={linkEvent ? `Qurilma: ${linkEvent.device_name} | Qurilma user ID: ${linkEvent.device_user_id || '—'}` : undefined}
+        footer={(
+          <div className="flex justify-end gap-2">
+            <Button variant="secondary" onClick={() => {
+              setLinkEvent(null)
+              setSelectedEmp(null)
+              setEmpSearch('')
+            }}>Bekor qilish</Button>
+            <Button variant="primary" onClick={handleLink} disabled={!selectedEmp || !linkEvent?.device_id || !linkEvent?.device_user_id}>Bog‘lash</Button>
+          </div>
+        )}
+      >
+        <div className="space-y-3">
+          <div>
+            <label className="mb-1 block text-xs font-medium text-slate-700">Xodim qidirish</label>
+            <Input value={empSearch} onChange={(e) => setEmpSearch(e.target.value)} placeholder="F.I.O, ichki ID, telefon yoki qurilma ID bo‘yicha..." />
+          </div>
+          <div className="max-h-64 overflow-auto rounded-lg border border-slate-200">
+            {(employeesSearchQuery.data?.items || []).map((emp) => (
+              <button
+                key={emp.id}
+                type="button"
+                onClick={() => setSelectedEmp(emp)}
+                className={`w-full flex items-center justify-between px-3 py-2 text-left text-xs hover:bg-slate-50 ${selectedEmp?.id === emp.id ? 'bg-teal-50' : ''}`}
+              >
+                <div>
+                  <p className="font-medium text-slate-900">{emp.full_name || `${emp.first_name || ''} ${emp.last_name || ''}`.trim()}</p>
+                  <p className="text-[10px] text-slate-500">ID: {emp.internal_id || '—'} • {emp.department_name || 'Bo‘lim yo‘q'}</p>
+                </div>
+                {selectedEmp?.id === emp.id && <Badge tone="green">Tanlangan</Badge>}
+              </button>
+            ))}
+            {!employeesSearchQuery.isLoading && !(employeesSearchQuery.data?.items || []).length && (
+              <div className="px-3 py-4 text-center text-xs text-slate-500">Natija topilmadi</div>
+            )}
+          </div>
+          {selectedEmp && (
+            <div className="rounded-lg bg-slate-50 p-3 text-xs">
+              <p className="font-medium text-slate-900">Tanlangan xodim</p>
+              <p className="mt-0.5 text-slate-600">{selectedEmp.full_name || `${selectedEmp.first_name || ''} ${selectedEmp.last_name || ''}`.trim()}</p>
+              <p className="mt-0.5 text-[10px] text-slate-500">Qurilma ID: {linkEvent?.device_user_id} → {linkEvent?.device_name}</p>
+            </div>
+          )}
+        </div>
+      </Modal>
     </div>
   )
 }

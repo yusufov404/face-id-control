@@ -11,10 +11,14 @@ from app.api.serializers import safe_attr
 from app.audit.service import AuditService
 from app.core.database import get_db
 from app.core.permissions import Permission
+from app.models.device import Device
 from app.models.employee import Employee, EmploymentStatus
+from app.models.employee_device import EmployeeDeviceUserId
 from app.schemas.common import Message, Page
 from app.schemas.hr import (
     EmployeeCreate,
+    EmployeeDeviceMappingCreate,
+    EmployeeDeviceMappingRead,
     EmployeeRead,
     EmployeeStatusUpdate,
     EmployeeUpdate,
@@ -35,6 +39,18 @@ def _to_read(emp: Employee) -> EmployeeRead:
     sup = safe_attr(emp, "supervisor")
     if sup is not None:
         data.supervisor_name = sup.full_name
+    # Attach device mappings if loaded
+    mappings = getattr(emp, "device_user_ids", None) or []
+    data.device_mappings = [
+        EmployeeDeviceMappingRead(
+            id=m.id,
+            device_id=m.device_id,
+            device_user_id=m.device_user_id,
+            device_name=getattr(getattr(m, "device", None), "name", None),
+        )
+        for m in mappings
+        if not getattr(m, "is_deleted", False)
+    ]
     return data
 
 
@@ -46,6 +62,7 @@ async def _load_employee(db: AsyncSession, employee_id: int) -> Optional[Employe
             selectinload(Employee.department),
             selectinload(Employee.position),
             selectinload(Employee.supervisor),
+            selectinload(Employee.device_user_ids).selectinload(EmployeeDeviceUserId.device),
         )
         .where(Employee.id == employee_id, Employee.is_deleted.is_(False))
     )
@@ -67,6 +84,7 @@ async def list_employees(
         selectinload(Employee.department),
         selectinload(Employee.position),
         selectinload(Employee.supervisor),
+        selectinload(Employee.device_user_ids).selectinload(EmployeeDeviceUserId.device),
     ).where(Employee.is_deleted.is_(False))
 
     # Department boundary enforced server-side
@@ -84,18 +102,24 @@ async def list_employees(
             raise HTTPException(status_code=400, detail="Noto'g'ri status")
     if search:
         like = f"%{search}%"
-        stmt = stmt.where(or_(
+        stmt = stmt.outerjoin(Employee.device_user_ids).where(or_(
             Employee.first_name.ilike(like),
             Employee.last_name.ilike(like),
             Employee.middle_name.ilike(like),
             Employee.internal_id.ilike(like),
             Employee.device_user_id.ilike(like),
+            EmployeeDeviceUserId.device_user_id.ilike(like),
             Employee.phone.ilike(like),
-        ))
+        )).distinct()
 
-    total = (await db.execute(select(func.count()).select_from(stmt.subquery()))).scalar_one()
+    total_stmt = select(func.count(func.distinct(Employee.id))).select_from(stmt.order_by(None).subquery())
+    total = (await db.execute(total_stmt)).scalar_one()
     stmt = stmt.order_by(Employee.last_name, Employee.first_name).offset((page - 1) * page_size).limit(page_size)
     rows = (await db.execute(stmt)).scalars().all()
+    # Ensure mappings are loaded
+    for row in rows:
+        if not getattr(row, "device_user_ids", None):
+            pass
     return Page[EmployeeRead](
         items=[_to_read(e) for e in rows], total=total, page=page, page_size=page_size,
         pages=(total + page_size - 1) // page_size,
@@ -112,6 +136,7 @@ async def get_employee(
         selectinload(Employee.department),
         selectinload(Employee.position),
         selectinload(Employee.supervisor),
+        selectinload(Employee.device_user_ids).selectinload(EmployeeDeviceUserId.device),
     ).where(Employee.id == employee_id, Employee.is_deleted.is_(False))
     emp = (await db.execute(stmt)).scalar_one_or_none()
     if emp is None:
@@ -194,6 +219,134 @@ async def update_employee(
     await db.commit()
     loaded = await _load_employee(db, emp.id)
     return _to_read(loaded or emp)
+
+
+@router.get("/{employee_id}/device-mappings", response_model=list[EmployeeDeviceMappingRead])
+async def list_device_mappings(
+    employee_id: int,
+    ctx: AuthContext = Depends(require_permission(Permission.EMPLOYEE_READ)),
+    db: AsyncSession = Depends(get_db),
+):
+    emp = await db.get(Employee, employee_id)
+    if emp is None or emp.is_deleted:
+        raise HTTPException(status_code=404, detail="Xodim topilmadi")
+    ctx.assert_department(emp.department_id)
+
+    stmt = (
+        select(EmployeeDeviceUserId)
+        .options(selectinload(EmployeeDeviceUserId.device))
+        .where(
+            EmployeeDeviceUserId.employee_id == employee_id,
+            EmployeeDeviceUserId.is_deleted.is_(False),
+        )
+        .order_by(EmployeeDeviceUserId.id)
+    )
+    rows = (await db.execute(stmt)).scalars().all()
+    result = []
+    for m in rows:
+        result.append(
+            EmployeeDeviceMappingRead(
+                id=m.id,
+                device_id=m.device_id,
+                device_user_id=m.device_user_id,
+                device_name=getattr(m.device, "name", None),
+            )
+        )
+    return result
+
+
+@router.post("/{employee_id}/device-mappings", response_model=EmployeeDeviceMappingRead, status_code=201)
+async def create_device_mapping(
+    employee_id: int,
+    payload: EmployeeDeviceMappingCreate,
+    ctx: AuthContext = Depends(require_permission(Permission.EMPLOYEE_UPDATE)),
+    db: AsyncSession = Depends(get_db),
+):
+    emp = await db.get(Employee, employee_id)
+    if emp is None or emp.is_deleted:
+        raise HTTPException(status_code=404, detail="Xodim topilmadi")
+    ctx.assert_department(emp.department_id)
+
+    device = await db.get(Device, payload.device_id)
+    if device is None or getattr(device, "is_deleted", False):
+        raise HTTPException(status_code=404, detail="Qurilma topilmadi")
+    if ctx.department_scope is not None and getattr(device, "department_id", None) != ctx.department_scope:
+        raise HTTPException(status_code=403, detail="Faqat o'z bo'limingizdagi qurilmaga bog'lashingiz mumkin")
+
+    dup_emp_dev = await db.execute(
+        select(EmployeeDeviceUserId.id).where(
+            EmployeeDeviceUserId.employee_id == employee_id,
+            EmployeeDeviceUserId.device_id == payload.device_id,
+            EmployeeDeviceUserId.is_deleted.is_(False),
+        )
+    )
+    if dup_emp_dev.scalar_one_or_none():
+        raise HTTPException(status_code=409, detail="Bu qurilmaga allaqachon bog'langan")
+
+    dup_dev_uid = await db.execute(
+        select(EmployeeDeviceUserId.id).where(
+            EmployeeDeviceUserId.device_id == payload.device_id,
+            EmployeeDeviceUserId.device_user_id == payload.device_user_id,
+            EmployeeDeviceUserId.is_deleted.is_(False),
+        )
+    )
+    if dup_dev_uid.scalar_one_or_none():
+        raise HTTPException(status_code=409, detail="Bu qurilmada bunday user ID allaqachon ishlatilmoqda")
+
+    mapping = EmployeeDeviceUserId(
+        employee_id=employee_id,
+        device_id=payload.device_id,
+        device_user_id=payload.device_user_id.strip(),
+    )
+    db.add(mapping)
+    await db.flush()
+    AuditService(db).record(
+        action="employee.device_mapping.create",
+        resource_type="employee",
+        resource_id=emp.id,
+        user_id=ctx.user_id,
+        new_values={"device_id": payload.device_id, "device_user_id": mapping.device_user_id},
+        description=f"Terminalga bog'landi: {device.name} (user_id={mapping.device_user_id})",
+    )
+    await db.commit()
+    await db.refresh(mapping)
+    mapping.device = device
+    return EmployeeDeviceMappingRead(
+        id=mapping.id,
+        device_id=mapping.device_id,
+        device_user_id=mapping.device_user_id,
+        device_name=getattr(device, "name", None),
+    )
+
+
+@router.delete("/{employee_id}/device-mappings/{mapping_id}", response_model=Message)
+async def delete_device_mapping(
+    employee_id: int,
+    mapping_id: int,
+    ctx: AuthContext = Depends(require_permission(Permission.EMPLOYEE_UPDATE)),
+    db: AsyncSession = Depends(get_db),
+):
+    emp = await db.get(Employee, employee_id)
+    if emp is None or emp.is_deleted:
+        raise HTTPException(status_code=404, detail="Xodim topilmadi")
+    ctx.assert_department(emp.department_id)
+
+    mapping = await db.get(EmployeeDeviceUserId, mapping_id)
+    if mapping is None or mapping.is_deleted or mapping.employee_id != employee_id:
+        raise HTTPException(status_code=404, detail="Bog'lanish topilmadi")
+
+    mapping.is_deleted = True
+    mapping.deleted_at = datetime.now(timezone.utc)
+    AuditService(db).record(
+        action="employee.device_mapping.delete",
+        resource_type="employee",
+        resource_id=emp.id,
+        user_id=ctx.user_id,
+        old_values={"device_id": mapping.device_id, "device_user_id": mapping.device_user_id},
+        description=f"Terminal bog'lanishi o'chirildi: device_id={mapping.device_id}, user_id={mapping.device_user_id}",
+    )
+    await db.commit()
+    return Message(detail="Terminal bog'lanishi o'chirildi")
 
 
 @router.post("/{employee_id}/status", response_model=EmployeeRead)

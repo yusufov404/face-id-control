@@ -11,6 +11,7 @@ import {
   RefreshCw,
   Trash2,
   XCircle,
+  Zap,
 } from 'lucide-react'
 import { departmentsApi, devicesApi } from '@/api/services'
 import type { Device, DeviceCreateInput, DeviceDiagnostics, DeviceEvent, DeviceUpdateInput } from '@/api/types'
@@ -133,6 +134,18 @@ export default function DevicesPage() {
     verify_mode: 'face',
   })
   const [manualError, setManualError] = useState('')
+  const [quickOpen, setQuickOpen] = useState(false)
+  const [quickForm, setQuickForm] = useState({
+    name: '',
+    ip_address: '',
+    port: '80',
+    connection_type: 'http',
+    username: 'admin',
+    password: '',
+    serial_number: '',
+  })
+  const [quickErrors, setQuickErrors] = useState<ValidationErrors>({})
+  const [quickError, setQuickError] = useState('')
 
   const debouncedSearch = useDebouncedValue(search)
 
@@ -207,6 +220,39 @@ export default function DevicesPage() {
       void queryClient.invalidateQueries({ queryKey: ['devices'] })
     },
     onError: (error) => setFormError(error instanceof Error ? error.message : "Qurilmani saqlab bo'lmadi"),
+  })
+
+  const quickCreateMutation = useMutation({
+    mutationFn: async () => {
+      const sn = quickForm.serial_number.trim() || `SN-${quickForm.ip_address.replace(/\./g, '')}-${Date.now().toString().slice(-6)}`
+      const payload: DeviceCreateInput = {
+        name: quickForm.name.trim(),
+        serial_number: sn,
+        device_type: 'face_id',
+        ip_address: quickForm.ip_address.trim(),
+        port: Number(quickForm.port),
+        connection_type: quickForm.connection_type,
+        username: quickForm.username.trim(),
+        password: quickForm.password,
+        department_id: null,
+        location: null,
+        sync_enabled: true,
+        sync_interval: 300,
+        timeout: 10,
+        retry_attempts: 3,
+        notes: null,
+      }
+      return devicesApi.create(payload)
+    },
+    onSuccess: () => {
+      toast.success("Qurilma qo'shildi")
+      setQuickOpen(false)
+      setQuickErrors({})
+      setQuickError('')
+      setQuickForm({ name: '', ip_address: '', port: '80', connection_type: 'http', username: 'admin', password: '', serial_number: '' })
+      void queryClient.invalidateQueries({ queryKey: ['devices'] })
+    },
+    onError: (error) => setQuickError(error instanceof Error ? error.message : "Qurilmani saqlab bo'lmadi"),
   })
 
   const deleteMutation = useMutation({
@@ -299,6 +345,27 @@ export default function DevicesPage() {
       event_type: 'check_in',
       verify_mode: 'face',
     })
+  }
+
+  function openQuick() {
+    setQuickForm({ name: '', ip_address: '', port: '80', connection_type: 'http', username: 'admin', password: '', serial_number: '' })
+    setQuickErrors({})
+    setQuickError('')
+    setQuickOpen(true)
+  }
+
+  function submitQuick(event: FormEvent) {
+    event.preventDefault()
+    const found = collectErrors([
+      ['name', required(quickForm.name, 'Nomi')],
+      ['ip_address', required(quickForm.ip_address, 'IP manzil')],
+      ['username', required(quickForm.username, 'Login')],
+      ['password', required(quickForm.password, 'Parol')],
+    ])
+    setQuickErrors(found)
+    setQuickError('')
+    if (hasErrors(found)) return
+    quickCreateMutation.mutate()
   }
 
   function submit(event: FormEvent) {
@@ -460,11 +527,12 @@ export default function DevicesPage() {
       <PageHeader
         eyebrow="Tizim"
         title="Face ID qurilmalari"
-        description="Hikvision terminallari, ISAPI diagnostikasi va sinxronizatsiya. Qurilma imkoniyatlari haqida faqat real diagnostika natijalari ko'rsatiladi."
+        description="Hikvision terminallari, ISAPI diagnostikasi va sinxronizatsiya."
         actions={(
           <div className="flex gap-2">
             <Button variant="secondary" icon={<RefreshCw className="h-4 w-4" />} onClick={() => void devicesQuery.refetch()} loading={devicesQuery.isFetching}>Yangilash</Button>
-            {can('device:create') ? <Button variant="primary" icon={<Plus className="h-4 w-4" />} onClick={openCreate}>Yangi qurilma</Button> : null}
+            {can('device:create') ? <Button variant="primary" icon={<Zap className="h-4 w-4" />} onClick={openQuick}>Tezkor qo'shish</Button> : null}
+            {can('device:create') ? <Button variant="ghost" icon={<Plus className="h-4 w-4" />} onClick={openCreate}>Batafsil</Button> : null}
           </div>
         )}
       />
@@ -500,7 +568,7 @@ export default function DevicesPage() {
           emptyTitle="Qurilmalar qo'shilmagan"
           emptyDescription="Face ID terminalini qo'shing va diagnostika orqali ulanishni tekshiring."
           emptyIcon={<Fingerprint className="h-6 w-6" />}
-          emptyAction={can('device:create') ? <Button variant="primary" size="sm" icon={<Plus className="h-3.5 w-3.5" />} onClick={openCreate}>Qurilma qo'shish</Button> : undefined}
+          emptyAction={can('device:create') ? <Button variant="primary" size="sm" icon={<Zap className="h-3.5 w-3.5" />} onClick={openQuick}>Tezkor qo'shish</Button> : undefined}
           footer={devicesQuery.data ? (
             <Pagination
               page={devicesQuery.data.page}
@@ -516,9 +584,55 @@ export default function DevicesPage() {
       </div>
 
       <Modal
+        open={quickOpen}
+        onClose={() => setQuickOpen(false)}
+        title="Tezkor qo'shish"
+        description="IP, port, login, parol va seriya raqamini kiriting"
+        size="md"
+        footer={(
+          <>
+            <Button variant="secondary" onClick={() => setQuickOpen(false)} disabled={quickCreateMutation.isPending}>Bekor qilish</Button>
+            <Button variant="primary" onClick={() => document.getElementById('quick-device-form')?.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }))} loading={quickCreateMutation.isPending}>
+              Saqlash
+            </Button>
+          </>
+        )}
+      >
+        <form id="quick-device-form" onSubmit={submitQuick} noValidate className="space-y-3">
+          {quickError ? <Alert tone="danger">{quickError}</Alert> : null}
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field label="Nomi" htmlFor="qd_name" required error={quickErrors.name} className="sm:col-span-2">
+              <Input id="qd_name" value={quickForm.name} onChange={(event) => setQuickForm({ ...quickForm, name: event.target.value })} invalid={Boolean(quickErrors.name)} placeholder="Qabulxona Face ID" autoFocus />
+            </Field>
+            <Field label="IP manzil" htmlFor="qd_ip" required error={quickErrors.ip_address}>
+              <Input id="qd_ip" value={quickForm.ip_address} onChange={(event) => setQuickForm({ ...quickForm, ip_address: event.target.value })} invalid={Boolean(quickErrors.ip_address)} placeholder="192.168.1.64" />
+            </Field>
+            <Field label="Port" htmlFor="qd_port">
+              <Input id="qd_port" type="number" min={1} max={65535} value={quickForm.port} onChange={(event) => setQuickForm({ ...quickForm, port: event.target.value })} />
+            </Field>
+            <Field label="Ulanish turi" htmlFor="qd_conn">
+              <Select id="qd_conn" value={quickForm.connection_type} onChange={(event) => setQuickForm({ ...quickForm, connection_type: event.target.value })}>
+                <option value="http">HTTP</option>
+                <option value="https">HTTPS</option>
+              </Select>
+            </Field>
+            <Field label="Login" htmlFor="qd_user" required error={quickErrors.username}>
+              <Input id="qd_user" value={quickForm.username} onChange={(event) => setQuickForm({ ...quickForm, username: event.target.value })} invalid={Boolean(quickErrors.username)} />
+            </Field>
+            <Field label="Parol" htmlFor="qd_pass" required error={quickErrors.password} className="sm:col-span-2">
+              <Input id="qd_pass" type="password" value={quickForm.password} onChange={(event) => setQuickForm({ ...quickForm, password: event.target.value })} invalid={Boolean(quickErrors.password)} autoComplete="new-password" />
+            </Field>
+            <Field label="Seriya raqami (ixtiyoriy)" htmlFor="qd_sn" className="sm:col-span-2">
+              <Input id="qd_sn" value={quickForm.serial_number} onChange={(event) => setQuickForm({ ...quickForm, serial_number: event.target.value })} placeholder="Bo'sh qoldirilsa avtomatik hosil qilinadi" />
+            </Field>
+          </div>
+        </form>
+      </Modal>
+
+      <Modal
         open={mode !== null}
         onClose={() => setMode(null)}
-        title={mode === 'create' ? "Yangi qurilma qo'shish" : 'Qurilmani tahrirlash'}
+        title={mode === 'create' ? "Yangi qurilma qo'shish (batafsil)" : 'Qurilmani tahrirlash'}
         description="Qurilma paroli shifrlangan holda saqlanadi va API orqali hech qachon qaytarilmaydi."
         size="xl"
         footer={(

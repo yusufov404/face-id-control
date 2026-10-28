@@ -122,12 +122,25 @@ class EmployeeUpdate(BaseModel):
     notes: Optional[str] = None
 
 
+class EmployeeDeviceMappingRead(ORMModel):
+    id: int
+    device_id: int
+    device_user_id: str
+    device_name: Optional[str] = None
+
+
+class EmployeeDeviceMappingCreate(BaseModel):
+    device_id: int
+    device_user_id: str = Field(..., min_length=1, max_length=32)
+
+
 class EmployeeRead(EmployeeBase, SoftDeleteSchema):
     id: int
     full_name: str = ""
     department_name: Optional[str] = None
     position_name: Optional[str] = None
     supervisor_name: Optional[str] = None
+    device_mappings: List[EmployeeDeviceMappingRead] = []
 
 
 class EmployeeStatusUpdate(BaseModel):

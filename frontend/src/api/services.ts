@@ -136,6 +136,15 @@ export const employeesApi = {
   remove(id: number) {
     return http.delete<MessageResponse>(`/employees/${id}`)
   },
+  getDeviceMappings(id: number) {
+    return http.get<any[]>(`/employees/${id}/device-mappings`)
+  },
+  addDeviceMapping(id: number, body: { device_id: number; device_user_id: string }) {
+    return http.post<any>(`/employees/${id}/device-mappings`, body)
+  },
+  removeDeviceMapping(id: number, mappingId: number) {
+    return http.delete<MessageResponse>(`/employees/${id}/device-mappings/${mappingId}`)
+  },
 }
 
 export const usersApi = {
@@ -175,7 +184,7 @@ export const permissionsApi = {
 }
 
 export const devicesApi = {
-  list(params: QueryParams) {
+  list(params: QueryParams = { page: 1, page_size: 100 }) {
     return http.get<Page<Device>>('/devices', params)
   },
   create(body: DeviceCreateInput) {
@@ -198,6 +207,9 @@ export const devicesApi = {
   },
   manualEvent(body: ManualEventInput) {
     return http.post<MessageResponse>('/devices/events/manual', body)
+  },
+  enrollFace(deviceId: number, employeeId: number) {
+    return http.post<MessageResponse>(`/devices/${deviceId}/enroll`, { employee_id: employeeId })
   },
 }
 
@@ -234,6 +246,11 @@ export const shiftsApi = {
   },
   remove(id: number) {
     return http.delete<MessageResponse>(`/shifts/${id}`)
+  },
+  importGraph(file: File, month: number, year: number) {
+    const formData = new FormData()
+    formData.append('file', file)
+    return http.post<MessageResponse>(`/shifts/import-graph?month=${month}&year=${year}`, formData)
   },
 }
 

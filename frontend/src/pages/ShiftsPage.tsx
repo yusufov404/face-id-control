@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   CalendarClock,
   CalendarDays,
+  FileUp,
   Pencil,
   Plus,
   Trash2,
@@ -134,6 +135,11 @@ export default function ShiftsPage() {
   })
   const [assignmentErrors, setAssignmentErrors] = useState<ValidationErrors>({})
   const [assignmentError, setAssignmentError] = useState('')
+  const [importOpen, setImportOpen] = useState(false)
+  const [importFile, setImportFile] = useState<File | null>(null)
+  const [importMonth, setImportMonth] = useState(10)
+  const [importYear, setImportYear] = useState(2026)
+  const [importing, setImporting] = useState(false)
 
   const debouncedSearch = useDebouncedValue(search)
 
@@ -400,7 +406,13 @@ export default function ShiftsPage() {
         eyebrow="Davomat"
         title="Smenalar va biriktirishlar"
         description="Ish jadvallari, kechikish chegaralari va xodimlarni smenaga biriktirish. Biriktirishlar serverdagi davomat hisobida ishlatiladi."
-        actions={tab === 'shifts' && can('shift:create') ? <Button variant="primary" icon={<Plus className="h-4 w-4" />} onClick={openCreate}>Yangi smena</Button> : tab === 'assignments' && can('shift:assign') ? <Button variant="primary" icon={<UserPlus className="h-4 w-4" />} onClick={openAssignment}>Smenaga biriktirish</Button> : undefined}
+        actions={
+          <div className="flex items-center gap-2">
+            {tab === 'shifts' && can('shift:create') ? <Button variant="secondary" icon={<FileUp className="h-4 w-4" />} onClick={() => setImportOpen(true)}>Grafik import qilish</Button> : null}
+            {tab === 'shifts' && can('shift:create') ? <Button variant="primary" icon={<Plus className="h-4 w-4" />} onClick={openCreate}>Yangi smena</Button> : null}
+            {tab === 'assignments' && can('shift:assign') ? <Button variant="primary" icon={<UserPlus className="h-4 w-4" />} onClick={openAssignment}>Smenaga biriktirish</Button> : null}
+          </div>
+        }
       />
 
       <Tabs
@@ -626,6 +638,63 @@ export default function ShiftsPage() {
           </div>
           <Checkbox label="Faol biriktirish" checked={assignmentForm.is_active} onChange={(event) => setAssignmentForm({ ...assignmentForm, is_active: event.target.checked })} />
         </form>
+      </Modal>
+
+      <Modal
+        open={importOpen}
+        onClose={() => setImportOpen(false)}
+        title="Ish grafigini import qilish"
+        description="Operativ blok yoki mikroblokka ishlatiladigan Excel (.xls/.xlsx) faylni yuklang. Tizim xodimlarni va kunlik smenalarni avtomatik aniqlaydi."
+        footer={(
+          <div className="flex justify-end gap-2">
+            <Button variant="secondary" onClick={() => setImportOpen(false)} disabled={importing}>Bekor qilish</Button>
+            <Button
+              variant="primary"
+              disabled={!importFile || importing}
+              loading={importing}
+              onClick={async () => {
+                if (!importFile) return
+                setImporting(true)
+                try {
+                  const res = await shiftsApi.importGraph(importFile, importMonth, importYear)
+                  toast.success(res.detail)
+                  setImportOpen(false)
+                  setImportFile(null)
+                  void queryClient.invalidateQueries({ queryKey: ['shifts'] })
+                  void queryClient.invalidateQueries({ queryKey: ['shift-assignments'] })
+                } catch (e: any) {
+                  toast.error(e?.response?.data?.detail || 'Importda xatolik yuz berdi')
+                } finally {
+                  setImporting(false)
+                }
+              }}
+            >
+              Import qilish
+            </Button>
+          </div>
+        )}
+      >
+        <div className="space-y-3">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field label="Oy">
+              <Select value={String(importMonth)} onChange={(e) => setImportMonth(Number(e.target.value))}>
+                <option value="1">Yanvar</option><option value="2">Fevral</option><option value="3">Mart</option><option value="4">Aprel</option><option value="5">May</option><option value="6">Iyun</option><option value="7">Iyul</option><option value="8">Avgust</option><option value="9">Sentyabr</option><option value="10">Oktyabr</option><option value="11">Noyabr</option><option value="12">Dekabr</option>
+              </Select>
+            </Field>
+            <Field label="Yil">
+              <Input type="number" value={importYear} onChange={(e) => setImportYear(Number(e.target.value))} />
+            </Field>
+          </div>
+          <Field label="Excel fayl">
+            <input
+              type="file"
+              accept=".xls,.xlsx"
+              onChange={(e) => setImportFile(e.target.files?.[0] || null)}
+              className="block w-full text-xs text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-100 file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-slate-700 hover:file:bg-slate-200"
+            />
+          </Field>
+          <p className="text-[10px] text-slate-400">Fayl: 10. 2026 OKTABRoper blok grafigi (5) (8) (2).xls kabi tuzilishda ishlaydi.</p>
+        </div>
       </Modal>
 
       <ConfirmDialog
