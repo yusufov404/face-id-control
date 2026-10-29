@@ -46,13 +46,14 @@ Not implemented / not verified here — do not assume they work:
 
 ### Verification performed (Windows, Python 3.12, Node 24.20, PostgreSQL 17.10)
 
-- Backend `pytest`: **86 passed** (including the opt-in migration test),
+- Backend `pytest`: **87 passed** (the migration test is opt-in and skipped by
+  default),
   covering authentication/RBAC, department isolation, attendance
   (day/night/cross-midnight), corrections, exports, backups and concurrency.
 - `alembic upgrade head` on an empty database followed by `alembic check`:
   **no new upgrade operations** (metadata and migration agree).
 - `ruff check backend/app backend/tests database`: **clean**.
-- FastAPI app import and OpenAPI schema generation: successful (52 paths).
+- FastAPI app import and OpenAPI schema generation: successful (59 paths).
 - Frontend `npm run gen:api`, `npm run typecheck`, `npm run lint` and
   `npm run build`: successful; the production build is written to
   `frontend/dist`.
@@ -249,7 +250,7 @@ Opt-in migration drift check: `RUN_MIGRATION_TEST=1 pytest tests/test_migrations
 Verified result in this repository (Windows, Python 3.12, PostgreSQL 17.10):
 
 ```text
-86 passed
+87 passed, 1 skipped
 alembic check: No new upgrade operations detected.
 ```
 

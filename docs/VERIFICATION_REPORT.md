@@ -109,7 +109,7 @@
 
 | Check | Command | Result |
 |-------|---------|--------|
-| Backend tests | `pytest -q` | ✅ **PASS** (86 passed, 1 skipped) |
+| Backend tests | `pytest -q` | ✅ **PASS** (87 passed, 1 skipped) |
 | Frontend typecheck | `npm run typecheck` | ✅ **PASS** |
 | Frontend lint | `npm run lint` | ✅ **PASS** |
 | Frontend build | `npm run build` | ✅ **PASS** (2595 modules, 410 kB gzipped) |

@@ -10,7 +10,9 @@ from sqlalchemy import (
     UniqueConstraint,
     Table,
     Column,
+    Index,
     Integer,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
@@ -50,8 +52,26 @@ class User(SoftDeleteBase):
 
     __tablename__ = "users"
 
-    username: Mapped[str] = mapped_column(String(50), nullable=False, unique=True)
-    email: Mapped[str] = mapped_column(String(100), nullable=False, unique=True)
+    # Uniqueness only applies to live rows: accounts are soft-deleted, so a plain
+    # UNIQUE constraint would keep the login/email of a removed person blocked
+    # forever and make re-creating that account fail with a 500.
+    __table_args__ = (
+        Index(
+            "uq_users_username_active", "username", unique=True,
+            postgresql_where=text("is_deleted IS false"),
+        ),
+        Index(
+            "uq_users_email_active", "email", unique=True,
+            postgresql_where=text("is_deleted IS false"),
+        ),
+        Index(
+            "uq_users_employee_id_active", "employee_id", unique=True,
+            postgresql_where=text("employee_id IS NOT NULL AND is_deleted IS false"),
+        ),
+    )
+
+    username: Mapped[str] = mapped_column(String(50), nullable=False)
+    email: Mapped[str] = mapped_column(String(100), nullable=False)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     full_name: Mapped[str] = mapped_column(String(100), nullable=False)
     phone: Mapped[str | None] = mapped_column(String(20), nullable=True)
@@ -66,7 +86,7 @@ class User(SoftDeleteBase):
         ForeignKey("departments.id", ondelete="SET NULL"), nullable=True, index=True
     )
     employee_id: Mapped[int | None] = mapped_column(
-        ForeignKey("employees.id", ondelete="SET NULL"), nullable=True, unique=True
+        ForeignKey("employees.id", ondelete="SET NULL"), nullable=True
     )
 
     # Relationships

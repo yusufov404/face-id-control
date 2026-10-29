@@ -7,7 +7,6 @@ from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
-import pandas as pd
 
 from app.api.deps import AuthContext, require_permission
 from app.audit.service import AuditService
@@ -239,6 +238,16 @@ async def import_graph(
     ctx: AuthContext = Depends(require_permission(Permission.SHIFT_ASSIGN)),
     db: AsyncSession = Depends(get_db),
 ):
+    # pandas is only needed for this one Excel import, so it is loaded lazily:
+    # importing it at module level took the whole API down when it was missing.
+    try:
+        import pandas as pd
+    except ModuleNotFoundError:
+        raise HTTPException(
+            status_code=503,
+            detail="Grafik import uchun 'pandas' kutubxonasi o'rnatilmagan",
+        )
+
     content = await file.read()
     try:
         xls = pd.ExcelFile(io.BytesIO(content))

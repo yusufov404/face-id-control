@@ -33,6 +33,7 @@ class DepartmentUpdate(BaseModel):
 class DepartmentRead(DepartmentBase, SoftDeleteSchema):
     id: int
     parent_name: Optional[str] = None
+    head_name: Optional[str] = None
     employee_count: int = 0
 
 

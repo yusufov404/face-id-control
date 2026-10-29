@@ -457,4 +457,4 @@ model before relying on it and verify a known check-in/check-out pair.
       record.
 - [ ] Logs contain no device password or bearer token.
 - [ ] `pytest` suite passes on PostgreSQL (verified on Windows/PostgreSQL 17.10
-      in this repository: 86 passed; re-run on the target Kali host).
+      in this repository: 87 passed, 1 skipped; re-run on the target Kali host).

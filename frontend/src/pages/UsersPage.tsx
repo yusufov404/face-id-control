@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Check,
+  Copy,
   KeyRound,
   Pencil,
   Plus,
@@ -101,6 +102,44 @@ function groupPermissions(permissions: Permission[]): Array<[string, Permission[
   return Array.from(groups.entries()).sort((a, b) => a[0].localeCompare(b[0]))
 }
 
+// Cyrillic/Uzbek -> latin so a login can be derived from the full name.
+const TRANSLIT: Record<string, string> = {
+  а: 'a', б: 'b', в: 'v', г: 'g', д: 'd', е: 'e', ё: 'yo', ж: 'j', з: 'z', и: 'i',
+  й: 'y', к: 'k', л: 'l', м: 'm', н: 'n', о: 'o', п: 'p', р: 'r', с: 's', т: 't',
+  у: 'u', ф: 'f', х: 'h', ц: 'ts', ч: 'ch', ш: 'sh', щ: 'sh', ъ: '', ы: 'i', ь: '',
+  э: 'e', ю: 'yu', я: 'ya', ў: 'u', қ: 'q', ғ: 'g', ҳ: 'h', ʼ: '', '‘': '', '’': '',
+}
+
+function usernameFromName(fullName: string): string {
+  const latin = fullName.toLowerCase().split('').map((char) => TRANSLIT[char] ?? char).join('')
+  const parts = latin.replace(/[^a-z0-9\s._-]/g, ' ').split(/\s+/).filter(Boolean)
+  const base = parts.slice(0, 2).join('.').replace(/[^a-z0-9._-]/g, '')
+  return base.length >= 3 ? base.slice(0, 50) : 'foydalanuvchi'
+}
+
+function uniqueUsername(base: string, taken: Set<string>): string {
+  if (!taken.has(base)) return base
+  for (let index = 2; index < 1000; index += 1) {
+    const candidate = `${base}${index}`
+    if (!taken.has(candidate)) return candidate
+  }
+  return `${base}${Date.now().toString().slice(-4)}`
+}
+
+function generatePassword(length = 10): string {
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789'
+  const bytes = new Uint8Array(length)
+  crypto.getRandomValues(bytes)
+  return Array.from(bytes, (byte) => alphabet[byte % alphabet.length]).join('')
+}
+
+interface SaveVariables {
+  username: string
+  password: string
+  email: string | null
+  roleIds: number[]
+}
+
 export default function UsersPage() {
   const { can, user: currentUser } = useAuth()
   const toast = useToast()
@@ -123,6 +162,11 @@ export default function UsersPage() {
   const [selectedRoleId, setSelectedRoleId] = useState<number | null>(null)
   const [permissionDraft, setPermissionDraft] = useState<{ roleId: number; ids: Set<number> } | null>(null)
   const [permissionSearch, setPermissionSearch] = useState('')
+  const [createMode, setCreateMode] = useState<'user' | 'department_head'>('user')
+  const [autoCredentials, setAutoCredentials] = useState(true)
+  const [credentials, setCredentials] = useState<{ username: string; password: string } | null>(null)
+
+  const isSuperAdmin = Boolean(currentUser?.is_superuser)
 
   const debouncedSearch = useDebouncedValue(search)
 
@@ -146,6 +190,23 @@ export default function UsersPage() {
     enabled: can('role:read'),
   })
   const departmentsQuery = useQuery({ queryKey: ['departments', 'options'], queryFn: departmentsApi.options })
+  // Small lookup list: used to detect departments that already have a head and to
+  // keep generated logins unique. Accounts are few compared to employees.
+  const accountsQuery = useQuery({
+    queryKey: ['users', 'accounts-index'],
+    queryFn: () => usersApi.list({ page: 1, page_size: 100 }),
+    enabled: can('user:create') || can('user:read'),
+  })
+
+  const departmentHeadRoleId = rolesQuery.data?.find((role) => role.name === 'department_head')?.id ?? null
+  const headDepartmentIds = new Set(
+    (accountsQuery.data?.items ?? [])
+      .filter((account) => account.roles.some((role) => role.name === 'department_head'))
+      .map((account) => account.department_id)
+      .filter((id): id is number => typeof id === 'number'),
+  )
+  const takenUsernames = new Set((accountsQuery.data?.items ?? []).map((account) => account.username))
+  const selectedDepartmentHasHead = form.department_id ? headDepartmentIds.has(Number(form.department_id)) : false
 
   const effectiveRoleId = selectedRoleId ?? rolesQuery.data?.[0]?.id ?? null
   const rolePermissionsQuery = useQuery({
@@ -158,35 +219,38 @@ export default function UsersPage() {
     : new Set((rolePermissionsQuery.data || []).map((permission) => permission.id))
 
   const saveMutation = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (variables: SaveVariables) => {
       if (mode === 'create') {
         const payload: UserCreateInput = {
-          username: form.username.trim(),
-          email: form.email.trim(),
-          password: form.password,
+          username: variables.username,
+          email: variables.email,
+          password: variables.password,
           full_name: form.full_name.trim(),
           phone: nullableText(form.phone),
           department_id: form.department_id ? Number(form.department_id) : null,
           employee_id: form.employee_id,
-          role_ids: can('user:assign_role') ? form.role_ids : [],
+          role_ids: variables.roleIds,
           is_active: form.is_active,
         }
         return usersApi.create(payload)
       }
       if (mode === 'edit' && selectedUser) {
         const payload: UserUpdateInput = {
-          email: form.email.trim(),
           full_name: form.full_name.trim(),
           phone: nullableText(form.phone),
           department_id: form.department_id ? Number(form.department_id) : null,
           employee_id: form.employee_id,
           is_active: form.is_active,
         }
+        if (form.email.trim()) payload.email = form.email.trim()
         return usersApi.update(selectedUser.id, payload)
       }
       throw new Error('Amal aniqlanmadi')
     },
-    onSuccess: () => {
+    onSuccess: (_created, variables) => {
+      if (mode === 'create') {
+        setCredentials({ username: variables.username, password: variables.password })
+      }
       toast.success(mode === 'create' ? "Foydalanuvchi qo'shildi" : "Foydalanuvchi yangilandi")
       setMode(null)
       setSelectedUser(null)
@@ -239,6 +303,8 @@ export default function UsersPage() {
     setFormErrors({})
     setFormError('')
     setSelectedUser(null)
+    setCreateMode('user')
+    setAutoCredentials(true)
     setMode('create')
   }
 
@@ -257,17 +323,43 @@ export default function UsersPage() {
 
   function submit(event: FormEvent) {
     event.preventDefault()
+    const isHeadMode = createMode === 'department_head'
+    const manualLogin = !isHeadMode && !autoCredentials
     const nextErrors = collectErrors([
-      ['username', mode === 'create' ? required(form.username, 'Login') : null],
-      ['username_pattern', mode === 'create' && form.username && !/^[A-Za-z0-9_.-]+$/.test(form.username) ? "Login faqat harf, raqam, nuqta, _ va - belgilaridan iborat bo'lishi kerak" : null],
-      ['email', emailError(form.email)],
       ['full_name', required(form.full_name, 'F.I.Sh.')],
-      ['password', mode === 'create' ? required(form.password, 'Parol') || minLength(form.password, 8, 'Parol') : null],
+      ['department_id', isHeadMode ? required(form.department_id, "Bo'lim") : null],
+      ['role', isHeadMode && !departmentHeadRoleId ? "Bo'lim boshlig'i roli topilmadi. Sahifani yangilang." : null],
+      ['username', manualLogin ? required(form.username, 'Login') : null],
+      ['username_pattern', manualLogin && form.username && !/^[A-Za-z0-9_.-]+$/.test(form.username) ? "Login faqat harf, raqam, nuqta, _ va - belgilaridan iborat bo'lishi kerak" : null],
+      ['email', form.email.trim() ? emailError(form.email) : null],
+      ['password', manualLogin ? required(form.password, 'Parol') || minLength(form.password, 8, 'Parol') : null],
     ])
     setFormErrors(nextErrors)
     setFormError('')
     if (hasErrors(nextErrors)) return
-    saveMutation.mutate()
+
+    const generated = isHeadMode || autoCredentials
+    const username = generated
+      ? uniqueUsername(usernameFromName(form.full_name), takenUsernames)
+      : form.username.trim()
+    const password = generated ? generatePassword() : form.password
+    // Boshliq rejimida ham emailni server o'zi yasaydi: <login>@facesys.local
+    const email = form.email.trim() || null
+    const roleIds = !isSuperAdmin
+      ? []
+      : isHeadMode && departmentHeadRoleId
+        ? [departmentHeadRoleId]
+        : form.role_ids
+    saveMutation.mutate({ username, password, email, roleIds })
+  }
+
+  async function copyCredentials(value: { username: string; password: string }) {
+    try {
+      await navigator.clipboard.writeText(`Login: ${value.username}\nParol: ${value.password}`)
+      toast.success('Login va parol nusxalandi')
+    } catch {
+      toast.error("Nusxalab bo'lmadi. Qo'lda ko'chiring.")
+    }
   }
 
   function toggleRole(roleId: number) {
@@ -355,7 +447,7 @@ export default function UsersPage() {
           {can('user:update') ? (
             <button type="button" onClick={() => openEdit(user)} className="rounded p-1.5 text-slate-400 hover:bg-slate-100 hover:text-teal-700" title="Tahrirlash"><Pencil className="h-4 w-4" /></button>
           ) : null}
-          {can('user:assign_role') ? (
+          {isSuperAdmin ? (
             <button type="button" onClick={() => openRoles(user)} className="rounded p-1.5 text-slate-400 hover:bg-slate-100 hover:text-violet-700" title="Rollarni boshqarish"><UserCog className="h-4 w-4" /></button>
           ) : null}
           {can('user:delete') && user.id !== currentUser?.id ? (
@@ -392,8 +484,8 @@ export default function UsersPage() {
         onChange={(value) => { setTab(value); setPage(1) }}
         items={[
           { key: 'users', label: 'Foydalanuvchilar', icon: <Users className="h-3.5 w-3.5" />, count: usersQuery.data?.total },
-          ...(can('role:read') ? [{ key: 'roles', label: 'Rollar', icon: <ShieldCheck className="h-3.5 w-3.5" />, count: rolesQuery.data?.length }] : []),
-          ...(can('role:read') ? [{ key: 'permissions', label: 'Ruxsatlar', icon: <KeyRound className="h-3.5 w-3.5" />, count: permissionsQuery.data?.length }] : []),
+          ...(isSuperAdmin ? [{ key: 'roles', label: 'Rollar', icon: <ShieldCheck className="h-3.5 w-3.5" />, count: rolesQuery.data?.length }] : []),
+          ...(isSuperAdmin ? [{ key: 'permissions', label: 'Ruxsatlar', icon: <KeyRound className="h-3.5 w-3.5" />, count: permissionsQuery.data?.length }] : []),
         ]}
       />
 
@@ -472,7 +564,7 @@ export default function UsersPage() {
                     <h2 className="text-sm font-bold text-slate-900">{selectedRole.display_name}</h2>
                     <p className="mt-0.5 font-mono text-[10px] text-slate-400">{selectedRole.name}</p>
                   </div>
-                  {can('role:assign_permission') ? (
+                  {isSuperAdmin ? (
                     <Button
                       variant="primary"
                       size="sm"
@@ -516,18 +608,18 @@ export default function UsersPage() {
                             <div className="flex items-center justify-between gap-2 border-b border-slate-100 bg-slate-50/70 px-3 py-2">
                               <span className="text-[11px] font-bold uppercase tracking-wide text-slate-600">{CATEGORY_LABELS[category] || category}</span>
                               <label className="flex cursor-pointer items-center gap-1.5 text-[10px] text-slate-500">
-                                <input type="checkbox" checked={allChecked} onChange={(event) => toggleCategory(permissions, event.target.checked)} disabled={!can('role:assign_permission') || (selectedRole.is_system && !currentUser?.is_superuser)} className="h-3.5 w-3.5 rounded border-slate-300 text-teal-600 focus:ring-teal-500" />
+                                <input type="checkbox" checked={allChecked} onChange={(event) => toggleCategory(permissions, event.target.checked)} disabled={!isSuperAdmin || (selectedRole.is_system && !currentUser?.is_superuser)} className="h-3.5 w-3.5 rounded border-slate-300 text-teal-600 focus:ring-teal-500" />
                                 Hammasi
                               </label>
                             </div>
                             <div className="grid gap-1.5 p-2 sm:grid-cols-2 lg:grid-cols-3">
                               {permissions.map((permission) => (
-                                <label key={permission.id} className={`flex cursor-pointer items-start gap-2 rounded-lg px-2 py-1.5 transition hover:bg-slate-50 ${!can('role:assign_permission') || (selectedRole.is_system && !currentUser?.is_superuser) ? 'cursor-not-allowed opacity-70' : ''}`}>
+                                <label key={permission.id} className={`flex cursor-pointer items-start gap-2 rounded-lg px-2 py-1.5 transition hover:bg-slate-50 ${!isSuperAdmin || (selectedRole.is_system && !currentUser?.is_superuser) ? 'cursor-not-allowed opacity-70' : ''}`}>
                                   <input
                                     type="checkbox"
                                     checked={selectedPermissionIds.has(permission.id)}
                                     onChange={() => togglePermission(permission.id)}
-                                    disabled={!can('role:assign_permission') || (selectedRole.is_system && !currentUser?.is_superuser)}
+                                    disabled={!isSuperAdmin || (selectedRole.is_system && !currentUser?.is_superuser)}
                                     className="mt-0.5 h-3.5 w-3.5 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
                                   />
                                   <span>
@@ -606,36 +698,118 @@ export default function UsersPage() {
       >
         <form id="user-form" onSubmit={submit} className="space-y-4" noValidate>
           {formError ? <Alert tone="danger">{formError}</Alert> : null}
+
+          {mode === 'create' && isSuperAdmin && departmentHeadRoleId ? (
+            <div className="grid gap-1.5 rounded-xl border border-slate-200 bg-slate-50 p-1.5 sm:grid-cols-2">
+              <button
+                type="button"
+                onClick={() => setCreateMode('user')}
+                className={`rounded-lg px-3 py-2 text-xs font-semibold transition ${createMode === 'user' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
+              >
+                Oddiy foydalanuvchi
+              </button>
+              <button
+                type="button"
+                onClick={() => setCreateMode('department_head')}
+                disabled={selectedDepartmentHasHead}
+                title={selectedDepartmentHasHead
+                  ? "Bu bo'limda allaqachon boshliq bor"
+                  : undefined}
+                className={`rounded-lg px-3 py-2 text-xs font-semibold transition ${createMode === 'department_head' ? 'bg-white text-teal-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'} disabled:cursor-not-allowed disabled:text-slate-300`}
+              >
+                Bo'lim boshlig'i sifatida ochish
+              </button>
+            </div>
+          ) : null}
+
           <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="Login" htmlFor="user_username" required error={formErrors.username || formErrors.username_pattern} hint={mode === 'edit' ? "Login o'zgartirilmaydi" : 'Faqat lotin harflari, raqam, nuqta, _ va -'}>
-              <Input id="user_username" value={form.username} onChange={(event) => setForm({ ...form, username: event.target.value })} disabled={mode === 'edit'} invalid={Boolean(formErrors.username || formErrors.username_pattern)} />
-            </Field>
-            <Field label="To'liq ism" htmlFor="user_full_name" required error={formErrors.full_name}>
+            <Field label="To'liq ism" htmlFor="user_full_name" required error={formErrors.full_name} hint={createMode === 'department_head' && mode === 'create' ? 'Login shu nomdan avtomatik yasaladi' : undefined}>
               <Input id="user_full_name" value={form.full_name} onChange={(event) => setForm({ ...form, full_name: event.target.value })} invalid={Boolean(formErrors.full_name)} />
             </Field>
-            <Field label="Email" htmlFor="user_email" required error={formErrors.email}>
+            <Field
+              label="Bo'lim"
+              htmlFor="user_department"
+              required={createMode === 'department_head' && mode === 'create'}
+              error={formErrors.department_id}
+              hint={selectedDepartmentHasHead && createMode === 'department_head' ? "Bu bo'limda allaqachon boshliq bor" : "Bo'sh qoldirilsa, barcha bo'limlar doirasida ishlaydi"}
+            >
+              <Select
+                id="user_department"
+                value={form.department_id}
+                onChange={(event) => {
+                  const value = event.target.value
+                  setForm({ ...form, department_id: value })
+                  if (value && headDepartmentIds.has(Number(value))) setCreateMode('user')
+                }}
+                invalid={Boolean(formErrors.department_id)}
+              >
+                <option value="">Barcha bo'limlar</option>
+                {departmentsQuery.data?.map((department) => <option key={department.id} value={department.id}>{department.name}</option>)}
+              </Select>
+            </Field>
+            {createMode === 'user' || mode === 'edit' ? (
+              <Field
+                label="Login"
+                htmlFor="user_username"
+                required={mode === 'create' && !autoCredentials}
+                error={formErrors.username || formErrors.username_pattern}
+                hint={mode === 'edit' ? "Login o'zgartirilmaydi" : autoCredentials ? 'F.I.Sh.dan avtomatik yaratiladi' : 'Faqat lotin harflari, raqam, nuqta, _ va -'}
+              >
+                <Input
+                  id="user_username"
+                  value={form.username}
+                  onChange={(event) => setForm({ ...form, username: event.target.value })}
+                  disabled={mode === 'edit' || (mode === 'create' && autoCredentials)}
+                  placeholder={mode === 'create' && autoCredentials ? 'avtomatik' : undefined}
+                  invalid={Boolean(formErrors.username || formErrors.username_pattern)}
+                />
+              </Field>
+            ) : null}
+            {mode === 'create' && createMode === 'user' ? (
+              <Field
+                label="Parol"
+                htmlFor="user_password"
+                required={!autoCredentials}
+                error={formErrors.password}
+                hint={autoCredentials ? 'Tasodifiy parol yaratiladi' : 'Kamida 8 belgi'}
+              >
+                <Input
+                  id="user_password"
+                  type="password"
+                  autoComplete="new-password"
+                  value={form.password}
+                  onChange={(event) => setForm({ ...form, password: event.target.value })}
+                  disabled={autoCredentials}
+                  placeholder={autoCredentials ? 'avtomatik' : undefined}
+                  invalid={Boolean(formErrors.password)}
+                />
+              </Field>
+            ) : null}
+            <Field label="Email" htmlFor="user_email" error={formErrors.email} hint="Bo'sh qoldirilsa, login@facesys.local avtomatik yasaladi">
               <Input id="user_email" type="email" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} invalid={Boolean(formErrors.email)} />
             </Field>
             <Field label="Telefon" htmlFor="user_phone">
               <Input id="user_phone" value={form.phone} onChange={(event) => setForm({ ...form, phone: event.target.value })} />
-            </Field>
-            {mode === 'create' ? (
-              <Field label="Parol" htmlFor="user_password" required error={formErrors.password} hint="Kamida 8 belgi">
-                <Input id="user_password" type="password" autoComplete="new-password" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} invalid={Boolean(formErrors.password)} />
-              </Field>
-            ) : null}
-            <Field label="Bo'lim" htmlFor="user_department" hint="Bo'sh qoldirilsa, barcha bo'limlar doirasida ishlaydi">
-              <Select id="user_department" value={form.department_id} onChange={(event) => setForm({ ...form, department_id: event.target.value })}>
-                <option value="">Barcha bo'limlar</option>
-                {departmentsQuery.data?.map((department) => <option key={department.id} value={department.id}>{department.name}</option>)}
-              </Select>
             </Field>
             <Field label="Bog'langan xodim" htmlFor="user_employee">
               <EmployeeCombobox id="user_employee" value={form.employee_id} onChange={(id) => setForm({ ...form, employee_id: id })} />
             </Field>
           </div>
 
-          {mode === 'create' && can('user:assign_role') ? (
+          {mode === 'create' && createMode === 'department_head' ? (
+            <Alert tone="info">Hisobga "Bo'lim boshlig'i" roli avtomatik beriladi. Login va parol tizim tomonidan yaratiladi va yaratilgandan keyin faqat bir marta ko'rsatiladi.</Alert>
+          ) : null}
+
+          {mode === 'create' && createMode === 'user' ? (
+            <Checkbox
+              label="Login va parolni avtomatik yaratish"
+              description="Login F.I.Sh.dan yasaladi, parol tasodifiy tanlanadi. Yaratilgandan keyin bir marta ko'rsatiladi."
+              checked={autoCredentials}
+              onChange={(event) => setAutoCredentials(event.target.checked)}
+            />
+          ) : null}
+
+          {mode === 'create' && createMode === 'user' && isSuperAdmin ? (
             <div>
               <p className="mb-2 text-xs font-semibold text-slate-700">Boshlang'ich rollar</p>
               {rolesQuery.isLoading ? <LoadingState compact /> : (
@@ -695,6 +869,32 @@ export default function UsersPage() {
         onConfirm={() => deleteTarget && deleteMutation.mutate(deleteTarget)}
         onClose={() => setDeleteTarget(null)}
       />
+
+      <Modal
+        open={Boolean(credentials)}
+        onClose={() => setCredentials(null)}
+        title="Hisob yaratildi"
+        description="Login va parolni xodimga bering — bu ma'lumot boshqa ko'rsatilmaydi."
+        size="sm"
+        footer={<Button variant="primary" onClick={() => setCredentials(null)}>Tushundim</Button>}
+      >
+        {credentials ? (
+          <div className="space-y-3">
+            <Alert tone="warning">Parolni hoziroq saqlang yoki xodimga bering. Keyinchalik u faqat o'zgartirilishi mumkin, ko'rish mumkin emas.</Alert>
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Login</p>
+              <p className="mt-1 font-mono text-sm font-semibold text-slate-900">{credentials.username}</p>
+            </div>
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Parol</p>
+              <p className="mt-1 font-mono text-sm font-semibold text-slate-900">{credentials.password}</p>
+            </div>
+            <Button variant="secondary" icon={<Copy className="h-4 w-4" />} onClick={() => void copyCredentials(credentials)}>
+              Nusxalash
+            </Button>
+          </div>
+        ) : null}
+      </Modal>
     </div>
   )
 }

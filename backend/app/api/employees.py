@@ -11,6 +11,7 @@ from app.api.serializers import safe_attr
 from app.audit.service import AuditService
 from app.core.database import get_db
 from app.core.permissions import Permission
+from app.models.department import Department
 from app.models.device import Device
 from app.models.employee import Employee, EmploymentStatus
 from app.models.employee_device import EmployeeDeviceUserId
@@ -112,7 +113,10 @@ async def list_employees(
             Employee.phone.ilike(like),
         )).distinct()
 
-    total_stmt = select(func.count(func.distinct(Employee.id))).select_from(stmt.order_by(None).subquery())
+    # Count the rows of the already-filtered statement. Counting ``Employee.id`` here
+    # would add ``employees`` back to the FROM clause (cartesian product) and return
+    # the table-wide row count instead of the number of matching employees.
+    total_stmt = select(func.count()).select_from(stmt.order_by(None).subquery())
     total = (await db.execute(total_stmt)).scalar_one()
     stmt = stmt.order_by(Employee.last_name, Employee.first_name).offset((page - 1) * page_size).limit(page_size)
     rows = (await db.execute(stmt)).scalars().all()
@@ -392,6 +396,17 @@ async def delete_employee(
     emp.is_deleted = True
     emp.deleted_at = datetime.now(timezone.utc)
     emp.status = EmploymentStatus.TERMINATED
+    # A removed employee must not stay registered as a department head (the FK
+    # only clears on a hard delete).
+    headed = (await db.execute(
+        select(Department.id).where(
+            Department.head_employee_id == emp.id, Department.is_deleted.is_(False)
+        )
+    )).scalars().all()
+    for dept_id in headed:
+        dept = await db.get(Department, dept_id)
+        if dept is not None:
+            dept.head_employee_id = None
     AuditService(db).record(
         action="employee.delete", resource_type="employee", resource_id=emp.id,
         user_id=ctx.user_id, description=f"Xodim o'chirildi (soft): {emp.full_name}",

@@ -1,9 +1,35 @@
-﻿from datetime import datetime
+﻿import re
+from datetime import datetime
 from typing import Optional, List
 
-from pydantic import BaseModel, Field, EmailStr
+from email_validator import EmailNotValidError, validate_email
+from pydantic import BaseModel, Field, field_validator
 
 from app.schemas.common import ORMModel, SoftDeleteSchema
+
+# Accounts created without an email get ``<login>@facesys.local``. That domain is
+# reserved, so a plain ``EmailStr`` rejects it — which used to break both creating
+# a department head and editing any auto-generated account.
+INTERNAL_EMAIL_DOMAIN = "facesys.local"
+_INTERNAL_LOCAL_PART = re.compile(r"^[A-Za-z0-9_.+-]{1,64}$")
+
+
+def normalize_email(value: object) -> Optional[str]:
+    """Validate an address, allowing the clinic's internal ``*.facesys.local`` domain."""
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    local, _, domain = text.rpartition("@")
+    if domain.lower() == INTERNAL_EMAIL_DOMAIN:
+        if not _INTERNAL_LOCAL_PART.match(local):
+            raise ValueError("Email formati noto'g'ri")
+        return text.lower()
+    try:
+        return validate_email(text, check_deliverability=False).normalized
+    except EmailNotValidError as exc:
+        raise ValueError(str(exc)) from exc
 
 
 class LoginRequest(BaseModel):
@@ -24,7 +50,9 @@ class TokenResponse(BaseModel):
 
 class UserCreate(BaseModel):
     username: str = Field(..., min_length=3, max_length=50, pattern=r"^[A-Za-z0-9_.-]+$")
-    email: EmailStr
+    # Optional: when omitted the API derives ``<username>@facesys.local`` so that
+    # accounts can be created with nothing but a login (offline clinic network).
+    email: Optional[str] = None
     password: str = Field(..., min_length=8, max_length=128)
     full_name: str = Field(..., min_length=1, max_length=100)
     phone: Optional[str] = None
@@ -33,14 +61,26 @@ class UserCreate(BaseModel):
     role_ids: List[int] = []
     is_active: bool = True
 
+    @field_validator("email", mode="before")
+    @classmethod
+    def _normalize_email(cls, value):
+        return normalize_email(value)
+
 
 class UserUpdate(BaseModel):
-    email: Optional[EmailStr] = None
+    email: Optional[str] = None
     full_name: Optional[str] = None
     phone: Optional[str] = None
     department_id: Optional[int] = None
     employee_id: Optional[int] = None
     is_active: Optional[bool] = None
+
+    @field_validator("email", mode="before")
+    @classmethod
+    def _normalize_email(cls, value):
+        if value is None:
+            return None
+        return normalize_email(value)
 
 
 class PasswordChange(BaseModel):

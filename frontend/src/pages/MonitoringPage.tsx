@@ -270,7 +270,7 @@ export default function MonitoringPage() {
             <option value="1">1 soat</option>
             <option value="6">6 soat</option>
             <option value="12">12 soat</option>
-            <option value="24" selected>24 soat</option>
+            <option value="24">24 soat</option>
             <option value="48">48 soat</option>
             <option value="168">1 hafta</option>
           </Select>

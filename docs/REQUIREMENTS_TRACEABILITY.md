@@ -166,7 +166,7 @@
 
 | Test Suite | Command | Tests | Status |
 |------------|---------|-------|--------|
-| Backend unit/integration | `pytest -q` | 86 passed, 1 skipped | ✅ PASS |
+| Backend unit/integration | `pytest -q` | 87 passed, 1 skipped | ✅ PASS |
 | Frontend typecheck | `npm run typecheck` | tsc clean | ✅ PASS |
 | Frontend lint | `npm run lint` | eslint clean | ✅ PASS |
 | Frontend build | `npm run build` | 2595 modules, 410 kB gzipped | ✅ PASS |
@@ -203,4 +203,4 @@
 
 ---
 
-*Generated from verified implementation as of 2026-10-23. All automated checks pass: backend tests (86/86), frontend typecheck/lint/build, Ruff, Alembic check.*
+*Generated from verified implementation as of 2026-10-29. All automated checks pass: backend tests (87/87), frontend typecheck/lint/build, Ruff, Alembic check.*

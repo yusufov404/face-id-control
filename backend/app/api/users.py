@@ -2,6 +2,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -104,8 +105,12 @@ async def create_user(
 ):
     if ctx.department_scope is not None and payload.department_id not in (None, ctx.department_scope):
         raise HTTPException(status_code=403, detail="Boshqa bo'limga foydalanuvchi qo'sha olmaysiz")
+    if payload.role_ids and not ctx.is_super_admin:
+        raise HTTPException(status_code=403, detail="Rol berish faqat Super Admin huquqi")
+
+    email = str(payload.email) if payload.email else f"{payload.username.strip().lower()}@facesys.local"
     dup = await db.execute(select(User.id).where(
-        (User.username == payload.username) | (User.email == payload.email), User.is_deleted.is_(False)
+        (User.username == payload.username) | (User.email == email), User.is_deleted.is_(False)
     ))
     if dup.scalar_one_or_none():
         raise HTTPException(status_code=409, detail="Username yoki email band")
@@ -115,7 +120,7 @@ async def create_user(
 
     user = User(
         username=payload.username,
-        email=payload.email,
+        email=email,
         password_hash=get_password_hash(payload.password),
         full_name=payload.full_name,
         phone=payload.phone,
@@ -125,14 +130,21 @@ async def create_user(
     )
     user.roles = roles
     db.add(user)
-    await db.flush()
-    AuditService(db).record(
-        action="user.create", resource_type="user", resource_id=user.id,
-        user_id=ctx.user_id,
-        new_values={"username": user.username, "role_ids": payload.role_ids},
-        description=f"Foydalanuvchi yaratildi: {user.username}",
-    )
-    await db.commit()
+    try:
+        # flush() already emits the INSERT, so a uniqueness race must be caught
+        # here too — otherwise it escaped as an unhandled 500 instead of a 409.
+        await db.flush()
+        AuditService(db).record(
+            action="user.create", resource_type="user", resource_id=user.id,
+            user_id=ctx.user_id,
+            new_values={"username": user.username, "role_ids": payload.role_ids},
+            description=f"Foydalanuvchi yaratildi: {user.username}",
+        )
+        await db.commit()
+    except IntegrityError:
+        # Covers races and any uniqueness rule the pre-check cannot see.
+        await db.rollback()
+        raise HTTPException(status_code=409, detail="Username yoki email band")
     await db.refresh(user)
     return _to_read(user)
 
@@ -174,7 +186,11 @@ async def update_user(
         user_id=ctx.user_id, old_values=old, new_values={k: str(v) for k, v in updates.items()},
         description=f"Foydalanuvchi tahrirlandi: {u.username}",
     )
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail="Bu email boshqa hisobda ishlatilgan")
     await db.refresh(u)
     return _to_read(u)
 
@@ -186,6 +202,8 @@ async def assign_roles(
     ctx: AuthContext = Depends(require_permission(Permission.USER_ASSIGN_ROLE)),
     db: AsyncSession = Depends(get_db),
 ):
+    if not ctx.is_super_admin:
+        raise HTTPException(status_code=403, detail="Rol berish faqat Super Admin huquqi")
     u = await db.get(User, user_id)
     if u is None or u.is_deleted:
         raise HTTPException(status_code=404, detail="Foydalanuvchi topilmadi")
@@ -260,6 +278,8 @@ async def set_role_permissions(
     ctx: AuthContext = Depends(require_permission(Permission.ROLE_ASSIGN_PERMISSION)),
     db: AsyncSession = Depends(get_db),
 ):
+    if not ctx.is_super_admin:
+        raise HTTPException(status_code=403, detail="Ruxsat berish faqat Super Admin huquqi")
     role = await db.get(Role, role_id)
     if role is None or role.is_deleted:
         raise HTTPException(status_code=404, detail="Rol topilmadi")

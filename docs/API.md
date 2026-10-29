@@ -264,12 +264,15 @@ history remains and is still readable.
 | `PUT` | `/roles/{role_id}/permissions` | `role:assign_permission` |
 | `GET` | `/permissions` | `role:read` |
 
-Create body: `username`, `email`, `password` (min 8), `full_name`, optional
-`phone`, `department_id`, `employee_id`, `role_ids`, `is_active`.
+Create body: `username`, `password` (min 8), `full_name`, optional `email`,
+`phone`, `department_id`, `employee_id`, `role_ids`, `is_active`. When `email`
+is omitted or blank the API derives `"<username>@facesys.local"`, so an account
+can be opened with nothing but a login and a name.
 
-Role assignment: `{ "role_ids": [2, 4], "expires_at": null }`. The guard in
-`users.py` prevents an HR user from granting `super_admin`; system roles cannot
-be edited by non-Super-Admins. Deactivating a user (`is_active=false`) is the
+Role assignment: `{ "role_ids": [2, 4], "expires_at": null }`. Only a Super
+Admin may send `role_ids`, assign roles or change role permissions; HR can
+create accounts but cannot grant privileges. System roles cannot be edited by
+non-Super-Admins. Deactivating a user (`is_active=false`) is the
 effective way to revoke existing JWTs. You cannot delete your own account.
 
 Role permissions update: `{ "permission_ids": [1, 2, 3] }` (full replacement).

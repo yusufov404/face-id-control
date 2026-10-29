@@ -183,11 +183,30 @@ async def test_hr_can_manage_employees_but_not_super_admin(client, db, make_user
                          json={"role_ids": [super_role_id]})
     assert r.status_code == 403
 
-    # HR may assign the HR role
+    # HR cannot grant roles at all (only Super Admin may)
     hr_role_id = seeded["roles"][Role.HR_DIRECTOR.value].id
     r = await client.put(f"{API}/users/{target.id}/roles", headers=hr_headers,
                          json={"role_ids": [hr_role_id]})
-    assert r.status_code == 200, r.text
+    assert r.status_code == 403
+
+    # HR can still create an account, but only without roles
+    r = await client.post(f"{API}/users", headers=hr_headers, json={
+        "username": "hr.assistant",
+        "password": "StrongPass123!",
+        "full_name": "Kadr Yordamchisi",
+        "role_ids": [hr_role_id],
+    })
+    assert r.status_code == 403
+
+    r = await client.post(f"{API}/users", headers=hr_headers, json={
+        "username": "hr.assistant",
+        "password": "StrongPass123!",
+        "full_name": "Kadr Yordamchisi",
+    })
+    assert r.status_code == 201, r.text
+    created = r.json()
+    assert created["roles"] == []
+    assert created["email"] == "hr.assistant@facesys.local"
 
     # HR cannot delete users
     r = await client.delete(f"{API}/users/{target.id}", headers=hr_headers)
@@ -216,6 +235,83 @@ async def test_super_admin_can_modify_system_roles(client, make_user, seeded):
                          json={"permission_ids": [permission_id]})
     assert r.status_code == 200, r.text
     assert [p["name"] for p in r.json()] == [Permission.REPORT_VIEW.value]
+
+
+async def test_user_email_is_optional(client, make_user, seeded):
+    """A blank email must not fail: the API derives <username>@facesys.local."""
+    _, headers = await make_user(Role.SUPER_ADMIN)
+    hr_role_id = seeded["roles"][Role.HR_DIRECTOR.value].id
+
+    r = await client.post(f"{API}/users", headers=headers, json={
+        "username": "bolim.boshligi",
+        "email": "",
+        "password": "StrongPass123!",
+        "full_name": "Bo'lim Boshlig'i",
+        "role_ids": [hr_role_id],
+    })
+    assert r.status_code == 201, r.text
+    body = r.json()
+    assert body["email"] == "bolim.boshligi@facesys.local"
+    assert [role["name"] for role in body["roles"]] == [Role.HR_DIRECTOR.value]
+
+
+async def test_login_is_reusable_after_soft_delete(client, make_user):
+    """Re-adding a removed person must not collide with the archived account."""
+    _, headers = await make_user(Role.SUPER_ADMIN)
+    payload = {
+        "username": "reuse.login",
+        "password": "StrongPass123!",
+        "full_name": "Qayta Qo'shilgan",
+    }
+
+    created = await client.post(f"{API}/users", headers=headers, json=payload)
+    assert created.status_code == 201, created.text
+    deleted = await client.delete(f"{API}/users/{created.json()['id']}", headers=headers)
+    assert deleted.status_code == 200, deleted.text
+
+    again = await client.post(f"{API}/users", headers=headers, json=payload)
+    assert again.status_code == 201, again.text
+    body = again.json()
+    assert body["username"] == "reuse.login"
+    assert body["email"] == "reuse.login@facesys.local"
+
+
+async def test_internal_email_domain_is_accepted_on_create_and_update(client, make_user):
+    """`*.facesys.local` is a reserved domain but must stay usable for accounts."""
+    _, headers = await make_user(Role.SUPER_ADMIN)
+    created = await client.post(f"{API}/users", headers=headers, json={
+        "username": "head.internal",
+        "email": "head.internal@facesys.local",
+        "password": "StrongPass123!",
+        "full_name": "Bo'lim Boshlig'i",
+    })
+    assert created.status_code == 201, created.text
+    assert created.json()["email"] == "head.internal@facesys.local"
+
+    # The edit form posts the stored address back — that must not be rejected.
+    updated = await client.patch(f"{API}/users/{created.json()['id']}", headers=headers, json={
+        "email": "head.internal@facesys.local",
+        "full_name": "Bo'lim Boshlig'i 2",
+    })
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["email"] == "head.internal@facesys.local"
+
+
+async def test_duplicate_user_returns_conflict_not_server_error(client, make_user):
+    """A uniqueness hit must surface as 409, never as an opaque 500."""
+    _, headers = await make_user(Role.SUPER_ADMIN)
+    payload = {
+        "username": "twin.login",
+        "email": "twin.login@example.com",
+        "password": "StrongPass123!",
+        "full_name": "Birinchi Hisob",
+    }
+    first = await client.post(f"{API}/users", headers=headers, json=payload)
+    assert first.status_code == 201, first.text
+
+    second = await client.post(f"{API}/users", headers=headers, json=payload)
+    assert second.status_code == 409, second.text
+    assert "band" in second.json()["detail"]
 
 
 async def test_unauthenticated_requests_are_rejected(client):

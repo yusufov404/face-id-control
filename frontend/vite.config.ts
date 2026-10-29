@@ -11,6 +11,7 @@ export default defineConfig({
     },
   },
   server: {
+    host: true,  // LAN'dagi boshqa kompyuterlar ham ocha oladi (klass IP'si)
     port: 5173,
     strictPort: true,
     proxy: {

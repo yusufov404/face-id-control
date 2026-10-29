@@ -141,12 +141,14 @@ class SecurityHeaders:
             "X-XSS-Protection": "1; mode=block",
             "Referrer-Policy": "strict-origin-when-cross-origin",
             "Permissions-Policy": "geolocation=(), microphone=(), camera=()",
+            # The API only returns JSON: nothing may be loaded or executed from
+            # it. Inline scripts/styles and CDNs are not needed here, and a
+            # strict policy stops a hijacked response from running script.
+            # (The UI is served by nginx, which sets its own CSP.)
             "Content-Security-Policy": (
-                "default-src 'self'; "
-                "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
-                "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
-                "font-src 'self' https://cdn.jsdelivr.net; "
-                "img-src 'self' data:; "
-                "connect-src 'self'"
+                "default-src 'none'; "
+                "frame-ancestors 'none'; "
+                "base-uri 'none'; "
+                "form-action 'none'"
             ),
         }

@@ -284,6 +284,41 @@ export interface paths {
         patch: operations["update_employee_api_v1_employees__employee_id__patch"];
         trace?: never;
     };
+    "/api/v1/employees/{employee_id}/device-mappings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Device Mappings */
+        get: operations["list_device_mappings_api_v1_employees__employee_id__device_mappings_get"];
+        put?: never;
+        /** Create Device Mapping */
+        post: operations["create_device_mapping_api_v1_employees__employee_id__device_mappings_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/employees/{employee_id}/device-mappings/{mapping_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Device Mapping */
+        delete: operations["delete_device_mapping_api_v1_employees__employee_id__device_mappings__mapping_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/employees/{employee_id}/status": {
         parameters: {
             query?: never;
@@ -731,6 +766,23 @@ export interface paths {
         head?: never;
         /** Update Shift */
         patch: operations["update_shift_api_v1_shifts__shift_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/shifts/import-graph": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Import Graph */
+        post: operations["import_graph_api_v1_shifts_import_graph_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/v1/shift-assignments": {
@@ -1208,6 +1260,14 @@ export interface components {
             /** Checksum */
             checksum?: string | null;
         };
+        /** Body_import_graph_api_v1_shifts_import_graph_post */
+        Body_import_graph_api_v1_shifts_import_graph_post: {
+            /**
+             * File
+             * Format: binary
+             */
+            file: string;
+        };
         /** CurrentUser */
         CurrentUser: {
             /** Id */
@@ -1405,6 +1465,8 @@ export interface components {
             id: number;
             /** Parent Name */
             parent_name?: string | null;
+            /** Head Name */
+            head_name?: string | null;
             /**
              * Employee Count
              * @default 0
@@ -1809,6 +1871,24 @@ export interface components {
             /** Notes */
             notes?: string | null;
         };
+        /** EmployeeDeviceMappingCreate */
+        EmployeeDeviceMappingCreate: {
+            /** Device Id */
+            device_id: number;
+            /** Device User Id */
+            device_user_id: string;
+        };
+        /** EmployeeDeviceMappingRead */
+        EmployeeDeviceMappingRead: {
+            /** Id */
+            id: number;
+            /** Device Id */
+            device_id: number;
+            /** Device User Id */
+            device_user_id: string;
+            /** Device Name */
+            device_name?: string | null;
+        };
         /** EmployeeRead */
         EmployeeRead: {
             /**
@@ -1883,6 +1963,11 @@ export interface components {
             position_name?: string | null;
             /** Supervisor Name */
             supervisor_name?: string | null;
+            /**
+             * Device Mappings
+             * @default []
+             */
+            device_mappings: components["schemas"]["EmployeeDeviceMappingRead"][];
         };
         /** EmployeeShiftAssignmentCreate */
         EmployeeShiftAssignmentCreate: {
@@ -2883,11 +2968,8 @@ export interface components {
         UserCreate: {
             /** Username */
             username: string;
-            /**
-             * Email
-             * Format: email
-             */
-            email: string;
+            /** Email */
+            email?: string | null;
             /** Password */
             password: string;
             /** Full Name */
@@ -3718,6 +3800,104 @@ export interface operations {
             };
         };
     };
+    list_device_mappings_api_v1_employees__employee_id__device_mappings_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                employee_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmployeeDeviceMappingRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_device_mapping_api_v1_employees__employee_id__device_mappings_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                employee_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EmployeeDeviceMappingCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmployeeDeviceMappingRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_device_mapping_api_v1_employees__employee_id__device_mappings__mapping_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                employee_id: number;
+                mapping_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Message"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     change_status_api_v1_employees__employee_id__status_post: {
         parameters: {
             query?: never;
@@ -4374,6 +4554,7 @@ export interface operations {
                 event_type?: string | null;
                 processed?: boolean | null;
                 hours?: number;
+                unmapped?: boolean;
             };
             header?: never;
             path?: never;
@@ -4801,6 +4982,42 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ShiftRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    import_graph_api_v1_shifts_import_graph_post: {
+        parameters: {
+            query?: {
+                month?: number;
+                year?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_import_graph_api_v1_shifts_import_graph_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Message"];
                 };
             };
             /** @description Validation Error */

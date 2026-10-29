@@ -3,6 +3,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.api.deps import AuthContext, require_permission
 from app.api.serializers import safe_attr
@@ -28,6 +29,9 @@ def _to_read(dept: Department, count: int = 0) -> DepartmentRead:
     parent = safe_attr(dept, "parent")
     if parent is not None:
         data.parent_name = parent.name
+    head = safe_attr(dept, "head")
+    if head is not None and not getattr(head, "is_deleted", False):
+        data.head_name = head.full_name
     return data
 
 
@@ -40,7 +44,7 @@ async def list_departments(
     ctx: AuthContext = Depends(require_permission(Permission.DEPARTMENT_READ)),
     db: AsyncSession = Depends(get_db),
 ):
-    stmt = select(Department).where(Department.is_deleted.is_(False))
+    stmt = select(Department).options(selectinload(Department.head)).where(Department.is_deleted.is_(False))
     if ctx.department_scope is not None:
         stmt = stmt.where(Department.id == ctx.department_scope)
     if search:
@@ -101,10 +105,12 @@ async def create_department(
     await db.flush()
     AuditService(db).record(
         action="department.create", resource_type="department", resource_id=dept.id,
-        user_id=ctx.user_id, new_values=payload.model_dump(), description=f"Bo'lim yaratildi: {dept.name}",
+        user_id=ctx.user_id, new_values=payload.model_dump(),        description=f"Bo'lim yaratildi: {dept.name}",
     )
     await db.commit()
-    await db.refresh(dept)
+    dept = (await db.execute(
+        select(Department).options(selectinload(Department.head)).where(Department.id == dept.id)
+    )).scalar_one()
     return _to_read(dept)
 
 
@@ -115,7 +121,9 @@ async def get_department(
     db: AsyncSession = Depends(get_db),
 ):
     ctx.assert_department(dept_id)
-    dept = await db.get(Department, dept_id)
+    dept = (await db.execute(
+        select(Department).options(selectinload(Department.head)).where(Department.id == dept_id)
+    )).scalar_one_or_none()
     if dept is None or dept.is_deleted:
         raise HTTPException(status_code=404, detail="Bo'lim topilmadi")
     count = (await db.execute(
@@ -134,7 +142,9 @@ async def update_department(
     ctx: AuthContext = Depends(require_permission(Permission.DEPARTMENT_UPDATE)),
     db: AsyncSession = Depends(get_db),
 ):
-    dept = await db.get(Department, dept_id)
+    dept = (await db.execute(
+        select(Department).options(selectinload(Department.head)).where(Department.id == dept_id)
+    )).scalar_one_or_none()
     if dept is None or dept.is_deleted:
         raise HTTPException(status_code=404, detail="Bo'lim topilmadi")
     if payload.parent_id == dept_id:
@@ -149,7 +159,9 @@ async def update_department(
         description=f"Bo'lim tahrirlandi: {dept.name}",
     )
     await db.commit()
-    await db.refresh(dept)
+    dept = (await db.execute(
+        select(Department).options(selectinload(Department.head)).where(Department.id == dept.id)
+    )).scalar_one()
     return _to_read(dept)
 
 

@@ -429,7 +429,7 @@ RUN_MIGRATION_TEST=1 TEST_DATABASE_PASSWORD='…' \
   /opt/facesys/venv/bin/pytest tests/test_migrations.py
 ```
 
-Verified in this repository on Windows/PostgreSQL 17.10: **86 passed**, and
+Verified in this repository on Windows/PostgreSQL 17.10: **87 passed, 1 skipped**, and
 `alembic upgrade head && alembic check` reports *No new upgrade operations
 detected*. The frontend checks also pass:
 

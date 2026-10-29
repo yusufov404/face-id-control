@@ -1203,6 +1203,168 @@
         }
       }
     },
+    "/api/v1/employees/{employee_id}/device-mappings": {
+      "get": {
+        "tags": [
+          "employees"
+        ],
+        "summary": "List Device Mappings",
+        "operationId": "list_device_mappings_api_v1_employees__employee_id__device_mappings_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "employee_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Employee Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/EmployeeDeviceMappingRead"
+                  },
+                  "title": "Response List Device Mappings Api V1 Employees  Employee Id  Device Mappings Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "employees"
+        ],
+        "summary": "Create Device Mapping",
+        "operationId": "create_device_mapping_api_v1_employees__employee_id__device_mappings_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "employee_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Employee Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmployeeDeviceMappingCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmployeeDeviceMappingRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/employees/{employee_id}/device-mappings/{mapping_id}": {
+      "delete": {
+        "tags": [
+          "employees"
+        ],
+        "summary": "Delete Device Mapping",
+        "operationId": "delete_device_mapping_api_v1_employees__employee_id__device_mappings__mapping_id__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "employee_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Employee Id"
+            }
+          },
+          {
+            "name": "mapping_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Mapping Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/employees/{employee_id}/status": {
       "post": {
         "tags": [
@@ -2438,6 +2600,16 @@
               "default": 24,
               "title": "Hours"
             }
+          },
+          {
+            "name": "unmapped",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Unmapped"
+            }
           }
         ],
         "responses": {
@@ -3257,6 +3429,78 @@
             }
           }
         ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/shifts/import-graph": {
+      "post": {
+        "tags": [
+          "shifts"
+        ],
+        "summary": "Import Graph",
+        "operationId": "import_graph_api_v1_shifts_import_graph_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "month",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 12,
+              "minimum": 1,
+              "default": 10,
+              "title": "Month"
+            }
+          },
+          {
+            "name": "year",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 2100,
+              "minimum": 2020,
+              "default": 2026,
+              "title": "Year"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_import_graph_api_v1_shifts_import_graph_post"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -5185,6 +5429,20 @@
         ],
         "title": "BackupInfo"
       },
+      "Body_import_graph_api_v1_shifts_import_graph_post": {
+        "properties": {
+          "file": {
+            "type": "string",
+            "format": "binary",
+            "title": "File"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file"
+        ],
+        "title": "Body_import_graph_api_v1_shifts_import_graph_post"
+      },
       "CurrentUser": {
         "properties": {
           "id": {
@@ -5557,6 +5815,17 @@
               }
             ],
             "title": "Parent Name"
+          },
+          "head_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Head Name"
           },
           "employee_count": {
             "type": "integer",
@@ -6804,6 +7073,60 @@
         ],
         "title": "EmployeeCreate"
       },
+      "EmployeeDeviceMappingCreate": {
+        "properties": {
+          "device_id": {
+            "type": "integer",
+            "title": "Device Id"
+          },
+          "device_user_id": {
+            "type": "string",
+            "maxLength": 32,
+            "minLength": 1,
+            "title": "Device User Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "device_id",
+          "device_user_id"
+        ],
+        "title": "EmployeeDeviceMappingCreate"
+      },
+      "EmployeeDeviceMappingRead": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "device_id": {
+            "type": "integer",
+            "title": "Device Id"
+          },
+          "device_user_id": {
+            "type": "string",
+            "title": "Device User Id"
+          },
+          "device_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Device Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "device_id",
+          "device_user_id"
+        ],
+        "title": "EmployeeDeviceMappingRead"
+      },
       "EmployeeRead": {
         "properties": {
           "created_at": {
@@ -7051,6 +7374,14 @@
               }
             ],
             "title": "Supervisor Name"
+          },
+          "device_mappings": {
+            "items": {
+              "$ref": "#/components/schemas/EmployeeDeviceMappingRead"
+            },
+            "type": "array",
+            "title": "Device Mappings",
+            "default": []
           }
         },
         "type": "object",
@@ -8042,7 +8373,7 @@
           "event_time"
         ],
         "title": "ManualEventIngest",
-        "description": "Manual/demo event ingest \u2014 explicitly flagged as simulated."
+        "description": "Manual/demo event ingest — explicitly flagged as simulated."
       },
       "Message": {
         "properties": {
@@ -9685,8 +10016,15 @@
             "title": "Username"
           },
           "email": {
-            "type": "string",
-            "format": "email",
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "email"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Email"
           },
           "password": {
@@ -9751,7 +10089,6 @@
         "type": "object",
         "required": [
           "username",
-          "email",
           "password",
           "full_name"
         ],

@@ -8,12 +8,12 @@
 
 ## 1. Executive Summary
 
-FaceSys Enterprise is **architecturally ready** for production deployment. All core backend tests pass (86/86), frontend builds successfully, and the application follows security best practices for a clinic LAN environment. The following items must be completed before go-live:
+FaceSys Enterprise is **architecturally ready** for production deployment. All core backend tests pass (87/87), frontend builds successfully, and the application follows security best practices for a clinic LAN environment. The following items must be completed before go-live:
 
 | Item | Status | Blocking |
 |------|--------|----------|
 | Test database operational | ✅ **FIXED** | No |
-| Backend tests passing | ✅ 86/86 | No |
+| Backend tests passing | ✅ 87/87 | No |
 | Frontend typecheck/lint/build | ✅ PASS | No |
 | Nginx reverse proxy config | ✅ EXISTS | No |
 | HTTPS/TLS termination | ⚠️ **MANUAL** | Yes (production) |
@@ -51,7 +51,7 @@ TEST_DATABASE_HOST=127.0.0.1 TEST_DATABASE_PORT=5432 \
 TEST_DATABASE_NAME=facesys_test TEST_DATABASE_USER=facesys \
 TEST_DATABASE_PASSWORD=<your_test_db_password> \
 .venv/bin/python -m pytest -q
-# Result: 86 passed, 1 skipped (migration test opt-in)
+# Result: 87 passed, 1 skipped (migration test opt-in)
 ```
 
 ### Required for CI/CD

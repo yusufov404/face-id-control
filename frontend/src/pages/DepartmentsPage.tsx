@@ -185,6 +185,15 @@ export default function DepartmentsPage() {
       cell: (department) => <span className="text-xs text-slate-600">{department.parent_name || '—'}</span>,
     },
     {
+      key: 'head',
+      header: "Bo'lim boshlig'i",
+      cell: (department) => (
+        department.head_name
+          ? <span className="text-xs text-slate-700">{department.head_name}</span>
+          : <span className="text-xs text-slate-400">— belgilanmagan</span>
+      ),
+    },
+    {
       key: 'employees',
       header: 'Xodimlar',
       cell: (department) => <span className="text-xs font-semibold tabular-nums text-slate-700">{formatNumber(department.employee_count)}</span>,
